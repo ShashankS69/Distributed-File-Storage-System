@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Retrieve Files</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <nav>
+        <a href="/">Upload</a>
+        <a href="/visualize">Visualize</a>
+        <a href="/retrieve">Retrieve</a>
+    </nav>
+
+    <div class="container">
+        <div class="card">
+            <h1><i class="fas fa-folder-open"></i> Your Files</h1>
+            <div class="file-grid">
+                {% for file in files %}
+                <div class="file-card">
+                    <div class="file-icon">
+                        <i class="fas fa-file"></i>
+                    </div>
+                    <div class="file-info">
+                        <div class="file-name">{{ file.filename }}</div>
+                        <div class="file-size">{{ "%.2f"|format(file.size / 1024 / 1024) }} MB</div>
+                        <div class="file-chunks">{{ file.chunks }} chunks</div>
+                    </div>
+                    <a href="{{ url_for('download_file', filename=file.filename) }}" 
+                       class="download-btn">
+                        <i class="fas fa-download"></i> Download
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

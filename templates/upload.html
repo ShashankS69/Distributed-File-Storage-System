@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Upload Files</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <nav>
+        <a href="/">Upload</a>
+        <a href="/visualize">Visualize</a>
+        <a href="/retrieve">Retrieve</a>
+    </nav>
+    
+    <div class="container">
+        <div class="card">
+            <h1><i class="fas fa-cloud-upload-alt"></i> Upload Files</h1>
+            <div class="upload-area" id="dropZone">
+                <i class="fas fa-cloud-upload-alt fa-3x"></i>
+                <h3>Drag and drop files here</h3>
+                <p>or</p>
+                <input type="file" id="fileInput" hidden>
+                <button onclick="document.getElementById('fileInput').click()" class="btn">Choose Files</button>
+            </div>
+            <div id="message"></div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight(e) {
+            dropZone.classList.add('drag-over');
+        }
+
+        function unhighlight(e) {
+            dropZone.classList.remove('drag-over');
+        }
+
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            const formData = new FormData();
+            formData.append('file', files[0]);
+            uploadFiles(formData);
+        }
+
+        async function uploadFiles(formData) {
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                document.getElementById('message').textContent = 
+                    data.success ? 'File uploaded successfully!' : data.error;
+            } catch (error) {
+                document.getElementById('message').textContent = 'Upload failed';
+            }
+        }
+    </script>
+</body>
+</html>

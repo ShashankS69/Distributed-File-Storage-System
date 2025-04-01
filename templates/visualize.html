@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Storage Visualization</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav>
+        <a href="/">Upload</a>
+        <a href="/visualize">Visualize</a>
+        <a href="/retrieve">Retrieve</a>
+    </nav>
+
+    <div class="container">
+        <div class="grid">
+            <div class="card">
+                <h2>Storage Usage</h2>
+                <canvas id="storageChart"></canvas>
+            </div>
+            <div class="card">
+                <h2>System Health</h2>
+                <canvas id="healthChart"></canvas>
+            </div>
+            <div class="card">
+                <h2>Volume 1 Status</h2>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (storage_info.volume1.used / storage_info.volume1.total) * 100 }}%"></div>
+                </div>
+                <p>Used: {{ "%.2f"|format(storage_info.volume1.used / 1024 / 1024) }} MB</p>
+                <p>Free: {{ "%.2f"|format(storage_info.volume1.free / 1024 / 1024) }} MB</p>
+            </div>
+            <div class="card">
+                <h2>Volume 2 Status</h2>
+                <div class="progress-bar">
+                    <div class="progress" style="width: {{ (storage_info.volume2.used / storage_info.volume2.total) * 100 }}%"></div>
+                </div>
+                <p>Used: {{ "%.2f"|format(storage_info.volume2.used / 1024 / 1024) }} MB</p>
+                <p>Free: {{ "%.2f"|format(storage_info.volume2.free / 1024 / 1024) }} MB</p>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Synchronization Status</h2>
+            <p>Last Synchronized: <span id="lastSync"></span></p>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let storageChart, timelineChart;
+        
+        function initCharts() {
+            // Storage usage chart
+            const ctxStorage = document.getElementById('storageChart').getContext('2d');
+            storageChart = new Chart(ctxStorage, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Used Space', 'Free Space'],
+                    datasets: [{
+                        data: [0, 0],
+                        backgroundColor: ['#4CAF50', '#f0f0f0']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+
+            // Timeline chart
+            const ctxTimeline = document.getElementById('healthChart').getContext('2d');
+            timelineChart = new Chart(ctxTimeline, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Events',
+                        data: [],
+                        borderColor: '#4CAF50'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function updateVisualization(data) {
+            // Update storage chart
+            storageChart.data.datasets[0].data = [
+                data.volume1.used + data.volume2.used,
+                data.volume1.free + data.volume2.free
+            ];
+            storageChart.update();
+
+            // Update timeline
+            if (data.metrics?.request_history) {
+                const timestamps = data.metrics.request_history.map(r => 
+                    new Date(r.timestamp * 1000).toLocaleTimeString());
+                timelineChart.data.labels = timestamps;
+                timelineChart.data.datasets[0].data = data.metrics.request_history.map(r => 1);
+                timelineChart.update();
+            }
+
+            // Update last sync time
+            document.getElementById('lastSync').textContent = 
+                new Date(data.timestamp).toLocaleString();
+        }
+
+        socket.on('storage_update', updateVisualization);
+        initCharts();
+    </script>
+</body>
+</html>
