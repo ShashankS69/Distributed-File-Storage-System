@@ -1,200 +1,545 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Storage Visualization</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
-        .sync-status {
-            font-weight: bold;
-            color: #4CAF50;
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
         }
 
-        .sync-status.error {
-            color: #f44336;
-        }
-
-        .storage-info {
+        .dashboard {
             display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
             justify-content: space-between;
+        }
+
+        .chart-row {
+            display: flex;
+            width: 100%;
+            gap: 15px;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .chart-container {
+            width: calc(50% - 10px);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            border-radius: 5px;
+            height: 250px;
+        }
+
+        .secondary-chart {
+            width: calc(33% - 10px);
+            height: 200px;
+        }
+
+        .grid-container {
+            width: 100%;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+
+        .file-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 15px;
             margin-top: 15px;
         }
 
-        .storage-block {
-            display: inline-block;
-            height: 30px;
-            margin-right: 5px;
-            border-radius: 3px;
-            vertical-align: middle;
-            text-align: center;
-            line-height: 30px;
+        .file-card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            position: relative;
+        }
+
+        .file-volume {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 12px;
             color: white;
+            padding: 3px 6px;
+            border-radius: 3px;
+        }
+
+        .volume1 {
+            background-color: #3498db;
+        }
+
+        .volume2 {
+            background-color: #2ecc71;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .chunk-indicator {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2px;
+            margin-top: 5px;
+        }
+
+        .chunk {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+        }
+
+        h2 {
+            color: #333;
+            margin-top: 0;
+            font-size: 18px;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-box {
+            text-align: center;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+            width: 130px;
+            margin: 5px;
+        }
+
+        .stat-value {
+            font-size: 18px;
             font-weight: bold;
         }
     </style>
 </head>
 
 <body>
-    <nav>
-        <a href="/">Upload</a>
-        <a href="/visualize">Visualize</a>
-        <a href="/retrieve">Retrieve</a>
-    </nav>
+    <h1>Storage System Visualization</h1>
 
-    <div class="container">
-        <div class="grid">
-            <div class="card">
+    <div class="stats">
+        <div class="stat-box">
+            <div>Total Files</div>
+            <div class="stat-value" id="total-files">0</div>
+        </div>
+        <div class="stat-box">
+            <div>Total Size</div>
+            <div class="stat-value" id="total-size">0 MB</div>
+        </div>
+        <div class="stat-box">
+            <div>Volume 1 Health</div>
+            <div class="stat-value" id="vol1-health">Unknown</div>
+        </div>
+        <div class="stat-box">
+            <div>Volume 2 Health</div>
+            <div class="stat-value" id="vol2-health">Unknown</div>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <!-- Main charts row -->
+        <div class="chart-row">
+            <div class="chart-container">
                 <h2>Storage Usage</h2>
-                <div id="storageInfo" class="chart-legend">
-                    <p>Volume 1: <span id="vol1Info">--</span></p>
-                    <div class="progress-bar">
-                        <div id="vol1Bar" class="progress" style="width: 0%; background-color: #4CAF50;"></div>
-                    </div>
-                    <p>Volume 2: <span id="vol2Info">--</span></p>
-                    <div class="progress-bar">
-                        <div id="vol2Bar" class="progress" style="width: 0%; background-color: #2196F3;"></div>
-                    </div>
-                </div>
+                <canvas id="storageChart"></canvas>
             </div>
-            <div class="card">
-                <h2>Volume 1 Status</h2>
-                <div class="progress-bar">
-                    <div class="progress"
-                        style="width: {{ (storage_info.volume1.used / storage_info.volume1.total) * 100 }}%"></div>
-                </div>
-                <p>Used: {{ "%.2f"|format(storage_info.volume1.used / 1024 / 1024) }} MB</p>
-                <p>Free: {{ "%.2f"|format(storage_info.volume1.free / 1024 / 1024) }} MB</p>
+            <div class="chart-container">
+                <h2>File Distribution</h2>
+                <canvas id="distributionChart"></canvas>
             </div>
-            <div class="card">
-                <h2>Volume 2 Status</h2>
-                <div class="progress-bar">
-                    <div class="progress"
-                        style="width: {{ (storage_info.volume2.used / storage_info.volume2.total) * 100 }}%"></div>
-                </div>
-                <p>Used: {{ "%.2f"|format(storage_info.volume2.used / 1024 / 1024) }} MB</p>
-                <p>Free: {{ "%.2f"|format(storage_info.volume2.free / 1024 / 1024) }} MB</p>
+        </div>
+
+        <!-- Additional charts row -->
+        <div class="chart-row">
+            <div class="chart-container secondary-chart">
+                <h2>Storage Trend</h2>
+                <canvas id="storageTrendChart"></canvas>
             </div>
-            <div class="card">
-                <h2>Synchronization Status</h2>
-                <p class="sync-status">Last Synchronized: <span id="lastSync">--</span></p>
-                <p>Health Status: <span id="healthStatus">--</span></p>
-                <button id="syncNowBtn" class="btn">Sync Now</button>
+            <div class="chart-container secondary-chart">
+                <h2>Upload Activity</h2>
+                <canvas id="uploadActivityChart"></canvas>
+            </div>
+            <div class="chart-container secondary-chart">
+                <h2>File Type Distribution</h2>
+                <canvas id="fileTypeChart"></canvas>
             </div>
         </div>
     </div>
 
+    <div class="grid-container">
+        <h2>Files Grid View</h2>
+        <div class="file-grid" id="file-grid">
+            <!-- Files will be populated here dynamically -->
+        </div>
+    </div>
+
     <script>
-        // Wait for DOM to be fully loaded before initializing
-        document.addEventListener('DOMContentLoaded', function () {
-            const socket = io();
-            let lastUpdateTime = 0;
-            const throttleTime = 1000; // 1 second throttle time
+        const socket = io();
+        let storageChart, distributionChart, storageTrendChart, uploadActivityChart, fileTypeChart;
+        let storageHistory = [];
 
-            // Format bytes to human readable format
-            function formatBytes(bytes, decimals = 2) {
-                if (bytes === 0) return '0 Bytes';
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
 
-                const k = 1024;
-                const dm = decimals < 0 ? 0 : decimals;
-                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-
-                const i = Math.floor(Math.log(bytes) / Math.log(k));
-
-                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
-            }
-
-            function updateStorageVisual(data) {
-                try {
-                    // Check if we have valid data
-                    if (!data || !data.volume1 || !data.volume2) {
-                        console.error('Invalid data structure received:', data);
-                        return;
-                    }
-
-                    const now = Date.now();
-                    if (now - lastUpdateTime < throttleTime) return;
-                    lastUpdateTime = now;
-
-                    // Calculate percentages
-                    const vol1Percent = (data.volume1.used / data.volume1.total) * 100;
-                    const vol2Percent = (data.volume2.used / data.volume2.total) * 100;
-
-                    // Update progress bars
-                    document.getElementById('vol1Bar').style.width = vol1Percent + '%';
-                    document.getElementById('vol2Bar').style.width = vol2Percent + '%';
-
-                    // Update text information
-                    document.getElementById('vol1Info').textContent =
-                        `${formatBytes(data.volume1.used)} used of ${formatBytes(data.volume1.total)} (${vol1Percent.toFixed(1)}%)`;
-                    document.getElementById('vol2Info').textContent =
-                        `${formatBytes(data.volume2.used)} used of ${formatBytes(data.volume2.total)} (${vol2Percent.toFixed(1)}%)`;
-
-                    // Update sync status
-                    updateSyncStatus(data);
-                } catch (error) {
-                    console.error('Error updating visualization:', error);
-                }
-            }
-
-            function updateSyncStatus(data) {
-                try {
-                    const lastSyncElement = document.getElementById('lastSync');
-                    const healthStatusElement = document.getElementById('healthStatus');
-
-                    // Update last sync time
-                    if (data.timestamp) {
-                        const syncTime = new Date(data.timestamp);
-                        lastSyncElement.textContent = syncTime.toLocaleString();
-
-                        // Check if sync is recent (less than 5 minutes old)
-                        const isRecent = (Date.now() - syncTime) < 5 * 60 * 1000;
-                        lastSyncElement.parentElement.classList.toggle('error', !isRecent);
-                    }
-
-                    // Update health status
-                    if (data.health_status) {
-                        const vol1Healthy = data.health_status.volume1;
-                        const vol2Healthy = data.health_status.volume2;
-
-                        if (vol1Healthy && vol2Healthy) {
-                            healthStatusElement.textContent = 'All volumes healthy';
-                            healthStatusElement.style.color = '#4CAF50';
-                        } else {
-                            healthStatusElement.textContent = 'Issues detected with volumes';
-                            healthStatusElement.style.color = '#f44336';
+        function initCharts(data) {
+            // Storage Usage Pie Chart
+            const storageCtx = document.getElementById('storageChart').getContext('2d');
+            storageChart = new Chart(storageCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Volume 1 Used', 'Volume 1 Free', 'Volume 2 Used', 'Volume 2 Free'],
+                    datasets: [{
+                        data: [
+                            data.volume1.used,
+                            data.volume1.total - data.volume1.used,
+                            data.volume2.used,
+                            data.volume2.total - data.volume2.used
+                        ],
+                        backgroundColor: ['#3498db', '#93c5fd', '#2ecc71', '#a7f3d0']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    const value = context.raw;
+                                    const percentage = Math.round((value / (data.volume1.total + data.volume2.total)) * 100);
+                                    return `${context.label}: ${formatBytes(value)} (${percentage}%)`;
+                                }
+                            }
                         }
                     }
-                } catch (error) {
-                    console.error('Error updating sync status:', error);
                 }
+            });
+
+            // Initialize storage trend chart
+            const trendCtx = document.getElementById('storageTrendChart').getContext('2d');
+            storageTrendChart = new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: [...Array(10).keys()].map(n => `T-${9 - n}`),
+                    datasets: [
+                        {
+                            label: 'Volume 1',
+                            data: Array(10).fill(0),
+                            borderColor: '#3498db',
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Volume 2',
+                            data: Array(10).fill(0),
+                            borderColor: '#2ecc71',
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function (value) {
+                                    return formatBytes(value, 0);
+                                }
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Initialize upload activity chart
+            const activityCtx = document.getElementById('uploadActivityChart').getContext('2d');
+            uploadActivityChart = new Chart(activityCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    datasets: [{
+                        label: 'Uploads',
+                        data: [0, 0, 0, 0, 0, 0, 0],
+                        backgroundColor: '#9b59b6'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Initialize file type distribution chart
+            const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
+            fileTypeChart = new Chart(fileTypeCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Documents', 'Images', 'Videos', 'Others'],
+                    datasets: [{
+                        data: [0, 0, 0, 0],
+                        backgroundColor: ['#f1c40f', '#e74c3c', '#1abc9c', '#95a5a6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Update storage history
+            storageHistory.push({
+                time: new Date(),
+                vol1: data.volume1.used,
+                vol2: data.volume2.used
+            });
+            if (storageHistory.length > 10) {
+                storageHistory.shift();
+            }
+            updateStorageTrendChart();
+        }
+
+        function updateStorageTrendChart() {
+            if (storageTrendChart && storageHistory.length > 0) {
+                storageTrendChart.data.labels = storageHistory.map((_, idx) =>
+                    `T-${storageHistory.length - 1 - idx}`);
+                storageTrendChart.data.datasets[0].data = storageHistory.map(h => h.vol1);
+                storageTrendChart.data.datasets[1].data = storageHistory.map(h => h.vol2);
+                storageTrendChart.update();
+            }
+        }
+
+        function updateFileGrid() {
+            fetch('/files')
+                .then(response => response.json())
+                .then(files => {
+                    const gridContainer = document.getElementById('file-grid');
+                    gridContainer.innerHTML = '';
+
+                    document.getElementById('total-files').textContent = files.length;
+
+                    let totalSize = 0;
+                    let volumeDistribution = {
+                        'volume1': 0,
+                        'volume2': 0
+                    };
+
+                    // Count file types for chart
+                    let fileTypes = {
+                        'Documents': 0,
+                        'Images': 0,
+                        'Videos': 0,
+                        'Others': 0
+                    };
+
+                    files.forEach(file => {
+                        totalSize += file.size;
+
+                        // Classify file type
+                        const ext = file.filename.split('.').pop().toLowerCase();
+                        if (['doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx'].includes(ext)) {
+                            fileTypes['Documents']++;
+                        } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext)) {
+                            fileTypes['Images']++;
+                        } else if (['mp4', 'mov', 'avi', 'wmv', 'flv', 'mkv'].includes(ext)) {
+                            fileTypes['Videos']++;
+                        } else {
+                            fileTypes['Others']++;
+                        }
+
+                        // Create file card
+                        const fileCard = document.createElement('div');
+                        fileCard.className = 'file-card';
+
+                        // Display main file info
+                        fileCard.innerHTML = `
+                            <h3>${file.filename}</h3>
+                            <div class="file-size">${formatBytes(file.size)}</div>
+                            <div>Chunks: ${file.chunks}</div>
+                            <div class="chunk-indicator">
+                                ${Array(Math.min(file.chunks, 10)).fill().map(() =>
+                            `<div class="chunk" style="background-color: ${Math.random() > 0.5 ? '#3498db' : '#2ecc71'};"></div>`
+                        ).join('')}
+                                ${file.chunks > 10 ? '...' : ''}
+                            </div>
+                        `;
+
+                        gridContainer.appendChild(fileCard);
+                    });
+
+                    document.getElementById('total-size').textContent = formatBytes(totalSize);
+
+                    // Update file type chart
+                    if (fileTypeChart) {
+                        fileTypeChart.data.datasets[0].data = [
+                            fileTypes['Documents'],
+                            fileTypes['Images'],
+                            fileTypes['Videos'],
+                            fileTypes['Others']
+                        ];
+                        fileTypeChart.update();
+                    }
+
+                    // Update distribution chart with actual distribution data
+                    // Check if the server provided distribution data
+                    const storageInfo = {{ storage_info | tojson
+                }};
+        if (storageInfo.distribution) {
+            const vol1Count = storageInfo.distribution.volume1;
+            const vol2Count = storageInfo.distribution.volume2;
+
+            if (distributionChart) {
+                distributionChart.destroy();
             }
 
-            // Handle socket connection
-            socket.on('connect', () => {
-                console.log('Connected to server');
-                // Request initial data
-                socket.emit('request_data');
+            const distCtx = document.getElementById('distributionChart').getContext('2d');
+            distributionChart = new Chart(distCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Volume 1', 'Volume 2'],
+                    datasets: [{
+                        data: [vol1Count, vol2Count],
+                        backgroundColor: ['#3498db', '#2ecc71']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                font: {
+                                    size: 10
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function (context) {
+                                    const value = context.raw;
+                                    const total = vol1Count + vol2Count;
+                                    const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                    return `${context.label}: ${value} chunks (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
             });
+        }
+                });
+        }
 
-            // Listen for storage updates
-            socket.on('storage_update', (data) => {
-                console.log('Received storage update:', data);
-                updateStorageVisual(data);
-            });
+        socket.on('storage_update', function (data) {
+            document.getElementById('vol1-health').textContent = data.health_status.volume1 ? 'OK' : 'ERROR';
+            document.getElementById('vol2-health').textContent = data.health_status.volume2 ? 'OK' : 'ERROR';
 
-            // Handle connection errors
-            socket.on('connect_error', (error) => {
-                console.error('Socket connection error:', error);
-                document.getElementById('healthStatus').textContent = 'Connection error';
-                document.getElementById('healthStatus').style.color = '#f44336';
+            // Update storage history
+            storageHistory.push({
+                time: new Date(),
+                vol1: data.volume1.used,
+                vol2: data.volume2.used
             });
+            if (storageHistory.length > 10) {
+                storageHistory.shift();
+            }
 
-            // Sync now button
-            document.getElementById('syncNowBtn').addEventListener('click', () => {
-                socket.emit('request_sync');
-                document.getElementById('lastSync').textContent = 'Syncing...';
-            });
+            if (storageChart) {
+                storageChart.data.datasets[0].data = [
+                    data.volume1.used,
+                    data.volume1.total - data.volume1.used,
+                    data.volume2.used,
+                    data.volume2.total - data.volume2.used
+                ];
+                storageChart.update();
+            } else {
+                initCharts(data);
+            }
+
+            updateStorageTrendChart();
+            updateFileGrid();
+
+            // Update upload activity (mock data for example)
+            if (uploadActivityChart) {
+                // In a real app, you would get this data from the server
+                const day = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
+                uploadActivityChart.data.datasets[0].data[day] += 1;
+                uploadActivityChart.update();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function () {
+            // Initial data fetch
+            const storageInfo = {{ storage_info| tojson
+        }};
+        initCharts(storageInfo);
+
+        document.getElementById('vol1-health').textContent =
+            storageInfo.health_status.volume1 ? 'OK' : 'ERROR';
+        document.getElementById('vol2-health').textContent =
+            storageInfo.health_status.volume2 ? 'OK' : 'ERROR';
+
+        updateFileGrid();
         });
     </script>
 </body>

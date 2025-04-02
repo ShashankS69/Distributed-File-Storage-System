@@ -217,7 +217,31 @@ def delete_file(filename):
 
 @app.route('/visualize')
 def visualize():
-    return render_template('visualize.html', storage_info=get_volume_info())
+    files = get_available_files()
+    storage_info = get_volume_info()
+    # Add file distribution information
+    storage_info['file_count'] = len(files)
+
+    # Calculate distribution across volumes
+    vol1_count = 0
+    vol2_count = 0
+    for file in files:
+        meta_path = os.path.join(VOLUME1_PATH, f"{file['filename']}.meta")
+        if os.path.exists(meta_path):
+            with open(meta_path, 'r') as meta_file:
+                metadata = json.load(meta_file)
+                for chunk in metadata['chunks']:
+                    if chunk['volume'] == 'volume1':
+                        vol1_count += 1
+                    else:
+                        vol2_count += 1
+
+    storage_info['distribution'] = {
+        'volume1': vol1_count,
+        'volume2': vol2_count
+    }
+
+    return render_template('visualize.html', storage_info=storage_info)
 
 
 @app.route('/download/<filename>')
