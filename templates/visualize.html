@@ -10,7 +10,37 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 20px;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+
+        .navbar {
+            background-color: #343a40;
+            overflow: hidden;
+            display: flex;
+            padding: 0 20px;
+        }
+
+        .navbar a {
+            color: white;
+            text-align: center;
+            padding: 14px 20px;
+            text-decoration: none;
+            font-size: 17px;
+            transition: background-color 0.3s;
+        }
+
+        .navbar a:hover {
+            background-color: #495057;
+        }
+
+        .navbar a.active {
+            background-color: #0d6efd;
+        }
+
+        .content-wrapper {
+            padding: 20px;
         }
 
         .dashboard {
@@ -34,6 +64,7 @@
             padding: 15px;
             border-radius: 5px;
             height: 250px;
+            background-color: white;
         }
 
         .secondary-chart {
@@ -47,62 +78,53 @@
             padding: 15px;
             border-radius: 5px;
             margin-top: 20px;
+            background-color: white;
         }
 
-        .file-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: 15px;
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
             margin-top: 15px;
         }
 
-        .file-card {
-            border: 1px solid #ddd;
-            border-radius: 5px;
+        .file-table th {
+            background-color: #f0f0f0;
             padding: 10px;
+            text-align: left;
+            font-weight: bold;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .file-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .file-table tr:hover {
             background-color: #f9f9f9;
-            position: relative;
-        }
-
-        .file-volume {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            font-size: 12px;
-            color: white;
-            padding: 3px 6px;
-            border-radius: 3px;
-        }
-
-        .volume1 {
-            background-color: #3498db;
-        }
-
-        .volume2 {
-            background-color: #2ecc71;
-        }
-
-        .file-size {
-            font-size: 12px;
-            color: #666;
         }
 
         .chunk-indicator {
             display: flex;
             flex-wrap: wrap;
             gap: 2px;
-            margin-top: 5px;
+            align-items: center;
         }
 
         .chunk {
             width: 10px;
             height: 10px;
             border-radius: 2px;
+            display: inline-block;
         }
 
+        h1,
         h2 {
             color: #333;
             margin-top: 0;
+        }
+
+        h2 {
             font-size: 18px;
         }
 
@@ -115,76 +137,112 @@
 
         .stat-box {
             text-align: center;
-            padding: 10px;
-            background-color: #f5f5f5;
+            padding: 15px;
+            background-color: white;
             border-radius: 5px;
             width: 130px;
             margin: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
         }
 
         .stat-value {
             font-size: 18px;
             font-weight: bold;
         }
+
+        .volume-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            color: white;
+            display: inline-block;
+        }
+
+        .volume1 {
+            background-color: #3498db;
+        }
+
+        .volume2 {
+            background-color: #2ecc71;
+        }
     </style>
 </head>
 
 <body>
-    <h1>Storage System Visualization</h1>
-
-    <div class="stats">
-        <div class="stat-box">
-            <div>Total Files</div>
-            <div class="stat-value" id="total-files">0</div>
-        </div>
-        <div class="stat-box">
-            <div>Total Size</div>
-            <div class="stat-value" id="total-size">0 MB</div>
-        </div>
-        <div class="stat-box">
-            <div>Volume 1 Health</div>
-            <div class="stat-value" id="vol1-health">Unknown</div>
-        </div>
-        <div class="stat-box">
-            <div>Volume 2 Health</div>
-            <div class="stat-value" id="vol2-health">Unknown</div>
-        </div>
+    <div class="navbar">
+        <a href="/">Upload</a>
+        <a href="/retrieve">Retrieve</a>
+        <a href="/visualize" class="active">Visualize</a>
     </div>
 
-    <div class="dashboard">
-        <!-- Main charts row -->
-        <div class="chart-row">
-            <div class="chart-container">
-                <h2>Storage Usage</h2>
-                <canvas id="storageChart"></canvas>
+    <div class="content-wrapper">
+        <h1>Storage System Visualization</h1>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div>Total Files</div>
+                <div class="stat-value" id="total-files">0</div>
             </div>
-            <div class="chart-container">
-                <h2>File Distribution</h2>
-                <canvas id="distributionChart"></canvas>
+            <div class="stat-box">
+                <div>Total Size</div>
+                <div class="stat-value" id="total-size">0 MB</div>
+            </div>
+            <div class="stat-box">
+                <div>Volume 1 Health</div>
+                <div class="stat-value" id="vol1-health">Unknown</div>
+            </div>
+            <div class="stat-box">
+                <div>Volume 2 Health</div>
+                <div class="stat-value" id="vol2-health">Unknown</div>
             </div>
         </div>
 
-        <!-- Additional charts row -->
-        <div class="chart-row">
-            <div class="chart-container secondary-chart">
-                <h2>Storage Trend</h2>
-                <canvas id="storageTrendChart"></canvas>
+        <div class="dashboard">
+            <!-- Main charts row -->
+            <div class="chart-row">
+                <div class="chart-container">
+                    <h2>Storage Usage</h2>
+                    <canvas id="storageChart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h2>File Distribution</h2>
+                    <canvas id="distributionChart"></canvas>
+                </div>
             </div>
-            <div class="chart-container secondary-chart">
-                <h2>Upload Activity</h2>
-                <canvas id="uploadActivityChart"></canvas>
-            </div>
-            <div class="chart-container secondary-chart">
-                <h2>File Type Distribution</h2>
-                <canvas id="fileTypeChart"></canvas>
+
+            <!-- Additional charts row -->
+            <div class="chart-row">
+                <div class="chart-container secondary-chart">
+                    <h2>Storage Trend</h2>
+                    <canvas id="storageTrendChart"></canvas>
+                </div>
+                <div class="chart-container secondary-chart">
+                    <h2>Upload Activity</h2>
+                    <canvas id="uploadActivityChart"></canvas>
+                </div>
+                <div class="chart-container secondary-chart">
+                    <h2>File Type Distribution</h2>
+                    <canvas id="fileTypeChart"></canvas>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="grid-container">
-        <h2>Files Grid View</h2>
-        <div class="file-grid" id="file-grid">
-            <!-- Files will be populated here dynamically -->
+        <div class="grid-container">
+            <h2>Files List</h2>
+            <table class="file-table">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>Chunks</th>
+                        <th>Distribution</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="file-tbody">
+                    <!-- Files will be populated here dynamically -->
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -203,7 +261,6 @@
         }
 
         function initCharts(data) {
-            // Storage Usage Pie Chart
             const storageCtx = document.getElementById('storageChart').getContext('2d');
             storageChart = new Chart(storageCtx, {
                 type: 'pie',
@@ -244,7 +301,6 @@
                 }
             });
 
-            // Initialize storage trend chart
             const trendCtx = document.getElementById('storageTrendChart').getContext('2d');
             storageTrendChart = new Chart(trendCtx, {
                 type: 'line',
@@ -291,7 +347,6 @@
                 }
             });
 
-            // Initialize upload activity chart
             const activityCtx = document.getElementById('uploadActivityChart').getContext('2d');
             uploadActivityChart = new Chart(activityCtx, {
                 type: 'bar',
@@ -319,7 +374,6 @@
                 }
             });
 
-            // Initialize file type distribution chart
             const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
             fileTypeChart = new Chart(fileTypeCtx, {
                 type: 'doughnut',
@@ -346,7 +400,6 @@
                 }
             });
 
-            // Update storage history
             storageHistory.push({
                 time: new Date(),
                 vol1: data.volume1.used,
@@ -372,8 +425,8 @@
             fetch('/files')
                 .then(response => response.json())
                 .then(files => {
-                    const gridContainer = document.getElementById('file-grid');
-                    gridContainer.innerHTML = '';
+                    const tableBody = document.getElementById('file-tbody');
+                    tableBody.innerHTML = '';
 
                     document.getElementById('total-files').textContent = files.length;
 
@@ -383,7 +436,6 @@
                         'volume2': 0
                     };
 
-                    // Count file types for chart
                     let fileTypes = {
                         'Documents': 0,
                         'Images': 0,
@@ -394,7 +446,6 @@
                     files.forEach(file => {
                         totalSize += file.size;
 
-                        // Classify file type
                         const ext = file.filename.split('.').pop().toLowerCase();
                         if (['doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx'].includes(ext)) {
                             fileTypes['Documents']++;
@@ -406,29 +457,75 @@
                             fileTypes['Others']++;
                         }
 
-                        // Create file card
-                        const fileCard = document.createElement('div');
-                        fileCard.className = 'file-card';
+                        const row = document.createElement('tr');
 
-                        // Display main file info
-                        fileCard.innerHTML = `
-                            <h3>${file.filename}</h3>
-                            <div class="file-size">${formatBytes(file.size)}</div>
-                            <div>Chunks: ${file.chunks}</div>
-                            <div class="chunk-indicator">
-                                ${Array(Math.min(file.chunks, 10)).fill().map(() =>
-                            `<div class="chunk" style="background-color: ${Math.random() > 0.5 ? '#3498db' : '#2ecc71'};"></div>`
-                        ).join('')}
-                                ${file.chunks > 10 ? '...' : ''}
-                            </div>
-                        `;
+                        const filenameCell = document.createElement('td');
+                        filenameCell.textContent = file.filename;
+                        row.appendChild(filenameCell);
 
-                        gridContainer.appendChild(fileCard);
+                        const sizeCell = document.createElement('td');
+                        sizeCell.textContent = formatBytes(file.size);
+                        row.appendChild(sizeCell);
+
+                        const chunksCell = document.createElement('td');
+                        chunksCell.textContent = file.chunks;
+                        row.appendChild(chunksCell);
+
+                        const distributionCell = document.createElement('td');
+                        const chunkIndicator = document.createElement('div');
+                        chunkIndicator.className = 'chunk-indicator';
+
+                        const vol1Badge = document.createElement('span');
+                        vol1Badge.className = 'volume-badge volume1';
+                        vol1Badge.textContent = 'Vol 1';
+                        chunkIndicator.appendChild(vol1Badge);
+
+                        for (let i = 0; i < Math.min(file.chunks, 5); i++) {
+                            const chunkDiv = document.createElement('div');
+                            chunkDiv.className = 'chunk';
+                            chunkDiv.style.backgroundColor = Math.random() > 0.5 ? '#3498db' : '#2ecc71';
+                            chunkIndicator.appendChild(chunkDiv);
+                        }
+
+                        if (file.chunks > 5) {
+                            const ellipsis = document.createElement('span');
+                            ellipsis.textContent = '...';
+                            chunkIndicator.appendChild(ellipsis);
+                        }
+
+                        const vol2Badge = document.createElement('span');
+                        vol2Badge.className = 'volume-badge volume2';
+                        vol2Badge.textContent = 'Vol 2';
+                        chunkIndicator.appendChild(vol2Badge);
+
+                        distributionCell.appendChild(chunkIndicator);
+                        row.appendChild(distributionCell);
+
+                        const actionsCell = document.createElement('td');
+                        const downloadLink = document.createElement('a');
+                        downloadLink.href = `/download/${file.filename}`;
+                        downloadLink.textContent = 'Download';
+                        downloadLink.style.marginRight = '10px';
+                        actionsCell.appendChild(downloadLink);
+
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.textContent = 'Delete';
+                        deleteBtn.onclick = function () { deleteFile(file.filename); };
+                        deleteBtn.style.border = 'none';
+                        deleteBtn.style.background = '#dc3545';
+                        deleteBtn.style.color = 'white';
+                        deleteBtn.style.padding = '3px 8px';
+                        deleteBtn.style.borderRadius = '3px';
+                        deleteBtn.style.cursor = 'pointer';
+                        actionsCell.appendChild(deleteBtn);
+
+                        row.appendChild(actionsCell);
+
+                        tableBody.appendChild(row);
                     });
 
                     document.getElementById('total-size').textContent = formatBytes(totalSize);
 
-                    // Update file type chart
                     if (fileTypeChart) {
                         fileTypeChart.data.datasets[0].data = [
                             fileTypes['Documents'],
@@ -490,11 +587,30 @@
                 });
         }
 
+        function deleteFile(filename) {
+            if (confirm(`Are you sure you want to delete ${filename}?`)) {
+                fetch(`/delete/${filename}`, {
+                    method: 'DELETE'
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('File deleted successfully');
+                            updateFileGrid();
+                        } else {
+                            alert('Error: ' + data.error);
+                        }
+                    })
+                    .catch(error => {
+                        alert('Error: ' + error);
+                    });
+            }
+        }
+
         socket.on('storage_update', function (data) {
             document.getElementById('vol1-health').textContent = data.health_status.volume1 ? 'OK' : 'ERROR';
             document.getElementById('vol2-health').textContent = data.health_status.volume2 ? 'OK' : 'ERROR';
 
-            // Update storage history
             storageHistory.push({
                 time: new Date(),
                 vol1: data.volume1.used,
@@ -519,10 +635,8 @@
             updateStorageTrendChart();
             updateFileGrid();
 
-            // Update upload activity (mock data for example)
             if (uploadActivityChart) {
-                // In a real app, you would get this data from the server
-                const day = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
+                const day = new Date().getDay();
                 uploadActivityChart.data.datasets[0].data[day] += 1;
                 uploadActivityChart.update();
             }
@@ -530,7 +644,7 @@
 
         document.addEventListener('DOMContentLoaded', function () {
             // Initial data fetch
-            const storageInfo = {{ storage_info| tojson
+            const storageInfo = {{ storage_info | tojson
         }};
         initCharts(storageInfo);
 

@@ -1,39 +1,352 @@
 <!DOCTYPE html>
-<html>
-<head>
-    <title>Retrieve Files</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-</head>
-<body>
-    <nav>
-        <a href="/">Upload</a>
-        <a href="/visualize">Visualize</a>
-        <a href="/retrieve">Retrieve</a>
-    </nav>
+<html lang="en">
 
-    <div class="container">
-        <div class="card">
-            <h1><i class="fas fa-folder-open"></i> Your Files</h1>
-            <div class="file-grid">
-                {% for file in files %}
-                <div class="file-card">
-                    <div class="file-icon">
-                        <i class="fas fa-file"></i>
-                    </div>
-                    <div class="file-info">
-                        <div class="file-name">{{ file.filename }}</div>
-                        <div class="file-size">{{ "%.2f"|format(file.size / 1024 / 1024) }} MB</div>
-                        <div class="file-chunks">{{ file.chunks }} chunks</div>
-                    </div>
-                    <a href="{{ url_for('download_file', filename=file.filename) }}" 
-                       class="download-btn">
-                        <i class="fas fa-download"></i> Download
-                    </a>
-                </div>
-                {% endfor %}
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retrieve Files</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f8f9fa;
+        }
+
+        .navbar {
+            background-color: #343a40;
+            overflow: hidden;
+            display: flex;
+            padding: 0 20px;
+        }
+
+        .navbar a {
+            color: white;
+            text-align: center;
+            padding: 14px 20px;
+            text-decoration: none;
+            font-size: 17px;
+            transition: background-color 0.3s;
+        }
+
+        .navbar a:hover {
+            background-color: #495057;
+        }
+
+        .navbar a.active {
+            background-color: #0d6efd;
+        }
+
+        .content-wrapper {
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .files-container {
+            background-color: white;
+            border-radius: 5px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2 {
+            color: #333;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-box {
+            text-align: center;
+            padding: 15px;
+            background-color: white;
+            border-radius: 5px;
+            width: 130px;
+            margin: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .search-bar {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .search-btn {
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        .file-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .file-table th {
+            background-color: #f0f0f0;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+            border-bottom: 2px solid #ddd;
+        }
+
+        .file-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .file-table tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .action-btn {
+            padding: 5px 10px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .download-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+        }
+
+        .delete-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+        }
+
+        .no-files {
+            text-align: center;
+            padding: 30px;
+            color: #6c757d;
+        }
+
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+
+        .alert-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="navbar">
+        <a href="/">Upload</a>
+        <a href="/retrieve" class="active">Retrieve</a>
+        <a href="/visualize">Visualize</a>
+    </div>
+
+    <div class="content-wrapper">
+        <h1>Retrieve Files</h1>
+
+        <div id="alert-container"></div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div>Total Files</div>
+                <div class="stat-value" id="total-files">0</div>
+            </div>
+            <div class="stat-box">
+                <div>Total Size</div>
+                <div class="stat-value" id="total-size">0 MB</div>
+            </div>
+        </div>
+
+        <div class="files-container">
+            <div class="search-bar">
+                <input type="text" id="search-input" class="search-input" placeholder="Search files...">
+                <button class="search-btn" id="search-btn">Search</button>
+            </div>
+
+            <table class="file-table">
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Size</th>
+                        <th>Chunks</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="file-list">
+                    <!-- Files will be populated here -->
+                </tbody>
+            </table>
+            <div id="no-files" class="no-files" style="display: none;">
+                <p>No files found. Upload some files first!</p>
             </div>
         </div>
     </div>
+
+    <script>
+        const socket = io();
+        let files = [];
+
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        function updateFileList(searchTerm = '') {
+            const fileList = document.getElementById('file-list');
+            const noFiles = document.getElementById('no-files');
+
+            // Filter files based on search term if provided
+            const filteredFiles = searchTerm
+                ? files.filter(file => file.filename.toLowerCase().includes(searchTerm.toLowerCase()))
+                : files;
+
+            if (filteredFiles.length === 0) {
+                fileList.innerHTML = '';
+                noFiles.style.display = 'block';
+                return;
+            }
+
+            noFiles.style.display = 'none';
+
+            let tableContent = '';
+            let totalSize = 0;
+
+            filteredFiles.forEach(file => {
+                totalSize += file.size;
+
+                tableContent += `
+                    <tr>
+                        <td>${file.filename}</td>
+                        <td>${formatBytes(file.size)}</td>
+                        <td>${file.chunks}</td>
+                        <td>
+                            <a href="/download/${file.filename}" class="action-btn download-btn">Download</a>
+                            <button onclick="deleteFile('${file.filename}')" class="action-btn delete-btn">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            fileList.innerHTML = tableContent;
+
+            document.getElementById('total-files').textContent = filteredFiles.length;
+            document.getElementById('total-size').textContent = formatBytes(totalSize);
+        }
+
+        function loadFiles() {
+            fetch('/files')
+                .then(response => response.json())
+                .then(data => {
+                    files = data;
+                    updateFileList();
+                })
+                .catch(error => {
+                    console.error('Error fetching files:', error);
+                    showAlert('Error loading files. Please try again.', 'danger');
+                });
+        }
+
+        function deleteFile(filename) {
+            if (confirm(`Are you sure you want to delete ${filename}?`)) {
+                fetch(`/delete/${filename}`, {
+                    method: 'DELETE'
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            showAlert('File deleted successfully', 'success');
+                            loadFiles(); // Refresh file list
+                        } else {
+                            showAlert('Error: ' + data.error, 'danger');
+                        }
+                    })
+                    .catch(error => {
+                        showAlert('Error: ' + error, 'danger');
+                    });
+            }
+        }
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alert-container');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alertDiv);
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                alertDiv.style.opacity = '0';
+                alertDiv.style.transition = 'opacity 1s';
+                setTimeout(() => {
+                    alertContainer.removeChild(alertDiv);
+                }, 1000);
+            }, 5000);
+        }
+
+        // Search functionality
+        document.getElementById('search-btn').addEventListener('click', function () {
+            const searchTerm = document.getElementById('search-input').value;
+            updateFileList(searchTerm);
+        });
+
+        document.getElementById('search-input').addEventListener('keyup', function (e) {
+            if (e.key === 'Enter') {
+                const searchTerm = document.getElementById('search-input').value;
+                updateFileList(searchTerm);
+            }
+        });
+
+        // Initial loading
+        document.addEventListener('DOMContentLoaded', function () {
+            loadFiles();
+        });
+
+        socket.on('storage_update', function (data) {
+            loadFiles(); // Refresh file list when storage is updated
+        });
+    </script>
 </body>
+
 </html>
