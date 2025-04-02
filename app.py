@@ -33,21 +33,88 @@ class RicartAgrawala:
         self.replies_received = set()
         self.deferred_replies = []
         self.lock = threading.Lock()
+        self.nodes = set()  # Track all nodes in the system
+        self.health_status = {
+            'volume1': True,
+            'volume2': True
+        }
 
     def request_cs(self, node_id):
         with self.lock:
             self.requesting = True
             self.timestamp = time.time()
             self.replies_received = set()
+
+            # Broadcast request to all nodes
+            for node in self.nodes:
+                if node != node_id:
+                    socketio.emit('cs_request', {
+                        'from_node': node_id,
+                        'timestamp': self.timestamp
+                    }, room=node)
+
+            # If we're the only node, we can enter CS immediately
+            if len(self.nodes) <= 1:
+                return self.timestamp
+
+            # Wait for replies (in a real implementation, we'd use a condition variable)
+            # For simplicity, we'll return immediately and check replies in another function
             return self.timestamp
+
+    def receive_request(self, from_node, request_timestamp, my_node_id):
+        with self.lock:
+            # If we're also requesting and our timestamp is lower (or equal but our ID is lower),
+            # defer the reply
+            if (self.requesting and
+                (self.timestamp < request_timestamp or
+                 (self.timestamp == request_timestamp and my_node_id < from_node))):
+                self.deferred_replies.append(from_node)
+            else:
+                # Otherwise, reply immediately
+                socketio.emit('cs_reply', {
+                    'from_node': my_node_id,
+                    'timestamp': time.time()
+                }, room=from_node)
+
+    def receive_reply(self, from_node):
+        with self.lock:
+            self.replies_received.add(from_node)
+            # If we have all replies, we can enter the critical section
+            if self.requesting and len(self.replies_received) >= len(self.nodes) - 1:
+                # Enter critical section - update health status
+                self.update_health_status()
+                # Then release
+                self.release_cs()
 
     def release_cs(self):
         with self.lock:
             self.requesting = False
+            # Send deferred replies
             for node in self.deferred_replies:
-                socketio.emit(
-                    'reply', {'timestamp': self.timestamp}, room=node)
+                socketio.emit('cs_reply', {
+                    'timestamp': time.time()
+                }, room=node)
             self.deferred_replies = []
+
+    def update_health_status(self):
+        # Check health of volumes and broadcast to all nodes
+        health_status = check_volumes_health()
+        socketio.emit('health_update', health_status)
+        self.health_status = health_status
+        return health_status
+
+    def register_node(self, node_id):
+        with self.lock:
+            self.nodes.add(node_id)
+            return len(self.nodes)
+
+    def unregister_node(self, node_id):
+        with self.lock:
+            if node_id in self.nodes:
+                self.nodes.remove(node_id)
+            if node_id in self.replies_received:
+                self.replies_received.remove(node_id)
+            return len(self.nodes)
 
 
 ra = RicartAgrawala()
@@ -291,18 +358,53 @@ def page_not_found(e):
 
 @socketio.on('connect')
 def handle_connect():
+    # Register the connecting node
+    node_id = request.sid
+    ra.register_node(node_id)
     emit('storage_update', get_volume_info())
 
 
-@socketio.on('request_cs')
+@socketio.on('disconnect')
+def handle_disconnect():
+    # Unregister the disconnecting node
+    node_id = request.sid
+    ra.unregister_node(node_id)
+
+
+@socketio.on('cs_request')
 def handle_cs_request(data):
+    # Handle request for critical section
+    from_node = data.get('from_node')
+    timestamp = data.get('timestamp')
+    my_node_id = request.sid
+    ra.receive_request(from_node, timestamp, my_node_id)
+
+
+@socketio.on('cs_reply')
+def handle_cs_reply(data):
+    # Handle reply to critical section request
+    from_node = data.get('from_node')
+    ra.receive_reply(from_node)
+
+
+@socketio.on('request_health_sync')
+def handle_health_sync():
+    # Initiate health synchronization using Ricart-Agrawala
     node_id = request.sid
     timestamp = ra.request_cs(node_id)
-    metrics.log_request(node_id, 'system', timestamp)
-    socketio.emit('storage_update', {
-        **get_volume_info(),
-        'metrics': metrics.get_metrics()
-    })
+    metrics.log_request(node_id, 'health-sync', timestamp)
+    # After receiving all replies, the health update will happen in receive_reply
+
+
+@socketio.on('health_update')
+def handle_health_update(data):
+    # Update local health status based on received data
+    if ra.health_status != data:
+        ra.health_status = data
+        socketio.emit('storage_update', {
+            **get_volume_info(),
+            'health_status': data
+        })
 
 
 if __name__ == '__main__':

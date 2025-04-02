@@ -165,6 +165,59 @@
         .volume2 {
             background-color: #2ecc71;
         }
+
+        .sync-card {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            margin-top: 20px;
+            margin-bottom: 10px;
+        }
+
+        .sync-history {
+            max-height: 150px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+
+        .sync-item {
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .sync-item:last-child {
+            border-bottom: none;
+        }
+
+        .sync-badge {
+            display: inline-block;
+            padding: 3px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            color: white;
+        }
+
+        .sync-success {
+            background-color: #2ecc71;
+        }
+
+        .sync-pending {
+            background-color: #f39c12;
+        }
+
+        .sync-error {
+            background-color: #e74c3c;
+        }
+
+        .sync-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 
@@ -195,10 +248,37 @@
                 <div>Volume 2 Health</div>
                 <div class="stat-value" id="vol2-health">Unknown</div>
             </div>
+            <div class="stat-box">
+                <div>Sync Status</div>
+                <div class="stat-value" id="sync-status">Idle</div>
+            </div>
+        </div>
+
+        <div class="sync-card">
+            <h2>Synchronization Status</h2>
+            <div class="sync-status">
+                <div>
+                    <strong>Last Sync:</strong> <span id="last-sync-time">Never</span>
+                </div>
+                <div>
+                    <strong>Nodes Synced:</strong> <span id="synced-nodes">0</span>
+                </div>
+                <div>
+                    <button id="request-sync" onclick="requestSync()"
+                        style="padding: 5px 10px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Request Health Sync
+                    </button>
+                </div>
+            </div>
+            <h3>Recent Sync History</h3>
+            <div class="sync-history" id="sync-history">
+                <div class="sync-item">
+                    <span>Waiting for sync events...</span>
+                </div>
+            </div>
         </div>
 
         <div class="dashboard">
-            <!-- Main charts row -->
             <div class="chart-row">
                 <div class="chart-container">
                     <h2>Storage Usage</h2>
@@ -210,7 +290,6 @@
                 </div>
             </div>
 
-            <!-- Additional charts row -->
             <div class="chart-row">
                 <div class="chart-container secondary-chart">
                     <h2>Storage Trend</h2>
@@ -240,7 +319,6 @@
                     </tr>
                 </thead>
                 <tbody id="file-tbody">
-                    <!-- Files will be populated here dynamically -->
                 </tbody>
             </table>
         </div>
@@ -250,6 +328,7 @@
         const socket = io();
         let storageChart, distributionChart, storageTrendChart, uploadActivityChart, fileTypeChart;
         let storageHistory = [];
+        let syncHistory = [];
 
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
@@ -536,8 +615,6 @@
                         fileTypeChart.update();
                     }
 
-                    // Update distribution chart with actual distribution data
-                    // Check if the server provided distribution data
                     const storageInfo = {{ storage_info | tojson
                 }};
         if (storageInfo.distribution) {
@@ -607,6 +684,64 @@
             }
         }
 
+        function requestSync() {
+            socket.emit('request_health_sync');
+            document.getElementById('sync-status').textContent = 'Syncing...';
+            addSyncEvent('Requested health synchronization', 'pending');
+        }
+
+        function addSyncEvent(message, status = 'success') {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+
+            syncHistory.push({
+                message: message,
+                time: timeString,
+                status: status,
+                timestamp: now
+            });
+
+            if (syncHistory.length > 10) {
+                syncHistory.shift();
+            }
+
+            updateSyncHistory();
+
+            if (status === 'success') {
+                document.getElementById('last-sync-time').textContent = timeString;
+            }
+        }
+
+        function updateSyncHistory() {
+            const historyContainer = document.getElementById('sync-history');
+            historyContainer.innerHTML = '';
+
+            syncHistory.forEach(event => {
+                const item = document.createElement('div');
+                item.className = 'sync-item';
+
+                const message = document.createElement('span');
+                message.textContent = event.message;
+
+                const timeAndStatus = document.createElement('div');
+
+                const time = document.createElement('span');
+                time.textContent = event.time + ' ';
+
+                const status = document.createElement('span');
+                status.className = `sync-badge sync-${event.status}`;
+                status.textContent = event.status.toUpperCase();
+
+                timeAndStatus.appendChild(time);
+                timeAndStatus.appendChild(status);
+
+                item.appendChild(message);
+                item.appendChild(timeAndStatus);
+
+                historyContainer.appendChild(item);
+            });
+        }
+
         socket.on('storage_update', function (data) {
             document.getElementById('vol1-health').textContent = data.health_status.volume1 ? 'OK' : 'ERROR';
             document.getElementById('vol2-health').textContent = data.health_status.volume2 ? 'OK' : 'ERROR';
@@ -640,10 +775,31 @@
                 uploadActivityChart.data.datasets[0].data[day] += 1;
                 uploadActivityChart.update();
             }
+
+            if (data.health_status) {
+                addSyncEvent('Volume health status updated', 'success');
+                document.getElementById('sync-status').textContent = 'Synced';
+            }
+        });
+
+        socket.on('cs_request', function (data) {
+            addSyncEvent(`Sync request from ${data.from_node.substring(0, 6)}...`, 'pending');
+        });
+
+        socket.on('cs_reply', function (data) {
+            addSyncEvent(`Sync reply received from ${data.from_node ? data.from_node.substring(0, 6) + '...' : 'a node'}`, 'success');
+        });
+
+        socket.on('health_update', function (data) {
+            const syncNodes = document.getElementById('synced-nodes');
+            const currentCount = parseInt(syncNodes.textContent) || 0;
+            syncNodes.textContent = currentCount + 1;
+
+            addSyncEvent('Health data synchronized', 'success');
+            document.getElementById('sync-status').textContent = 'Synced';
         });
 
         document.addEventListener('DOMContentLoaded', function () {
-            // Initial data fetch
             const storageInfo = {{ storage_info | tojson
         }};
         initCharts(storageInfo);
@@ -654,6 +810,10 @@
             storageInfo.health_status.volume2 ? 'OK' : 'ERROR';
 
         updateFileGrid();
+
+        addSyncEvent('System initialized', 'success');
+        document.getElementById('last-sync-time').textContent = new Date().toLocaleTimeString();
+        document.getElementById('synced-nodes').textContent = '1';
         });
     </script>
 </body>
