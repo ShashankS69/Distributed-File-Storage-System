@@ -1,11 +1,40 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Storage Visualization</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .sync-status {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .sync-status.error {
+            color: #f44336;
+        }
+
+        .storage-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+        }
+
+        .storage-block {
+            display: inline-block;
+            height: 30px;
+            margin-right: 5px;
+            border-radius: 3px;
+            vertical-align: middle;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
 </head>
+
 <body>
     <nav>
         <a href="/">Upload</a>
@@ -17,16 +46,22 @@
         <div class="grid">
             <div class="card">
                 <h2>Storage Usage</h2>
-                <canvas id="storageChart"></canvas>
-            </div>
-            <div class="card">
-                <h2>System Health</h2>
-                <canvas id="healthChart"></canvas>
+                <div id="storageInfo" class="chart-legend">
+                    <p>Volume 1: <span id="vol1Info">--</span></p>
+                    <div class="progress-bar">
+                        <div id="vol1Bar" class="progress" style="width: 0%; background-color: #4CAF50;"></div>
+                    </div>
+                    <p>Volume 2: <span id="vol2Info">--</span></p>
+                    <div class="progress-bar">
+                        <div id="vol2Bar" class="progress" style="width: 0%; background-color: #2196F3;"></div>
+                    </div>
+                </div>
             </div>
             <div class="card">
                 <h2>Volume 1 Status</h2>
                 <div class="progress-bar">
-                    <div class="progress" style="width: {{ (storage_info.volume1.used / storage_info.volume1.total) * 100 }}%"></div>
+                    <div class="progress"
+                        style="width: {{ (storage_info.volume1.used / storage_info.volume1.total) * 100 }}%"></div>
                 </div>
                 <p>Used: {{ "%.2f"|format(storage_info.volume1.used / 1024 / 1024) }} MB</p>
                 <p>Free: {{ "%.2f"|format(storage_info.volume1.free / 1024 / 1024) }} MB</p>
@@ -34,83 +69,134 @@
             <div class="card">
                 <h2>Volume 2 Status</h2>
                 <div class="progress-bar">
-                    <div class="progress" style="width: {{ (storage_info.volume2.used / storage_info.volume2.total) * 100 }}%"></div>
+                    <div class="progress"
+                        style="width: {{ (storage_info.volume2.used / storage_info.volume2.total) * 100 }}%"></div>
                 </div>
                 <p>Used: {{ "%.2f"|format(storage_info.volume2.used / 1024 / 1024) }} MB</p>
                 <p>Free: {{ "%.2f"|format(storage_info.volume2.free / 1024 / 1024) }} MB</p>
             </div>
-        </div>
-        <div class="card">
-            <h2>Synchronization Status</h2>
-            <p>Last Synchronized: <span id="lastSync"></span></p>
+            <div class="card">
+                <h2>Synchronization Status</h2>
+                <p class="sync-status">Last Synchronized: <span id="lastSync">--</span></p>
+                <p>Health Status: <span id="healthStatus">--</span></p>
+                <button id="syncNowBtn" class="btn">Sync Now</button>
+            </div>
         </div>
     </div>
 
     <script>
-        const socket = io();
-        let storageChart, timelineChart;
-        
-        function initCharts() {
-            // Storage usage chart
-            const ctxStorage = document.getElementById('storageChart').getContext('2d');
-            storageChart = new Chart(ctxStorage, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Used Space', 'Free Space'],
-                    datasets: [{
-                        data: [0, 0],
-                        backgroundColor: ['#4CAF50', '#f0f0f0']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
+        // Wait for DOM to be fully loaded before initializing
+        document.addEventListener('DOMContentLoaded', function () {
+            const socket = io();
+            let lastUpdateTime = 0;
+            const throttleTime = 1000; // 1 second throttle time
 
-            // Timeline chart
-            const ctxTimeline = document.getElementById('healthChart').getContext('2d');
-            timelineChart = new Chart(ctxTimeline, {
-                type: 'line',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Events',
-                        data: [],
-                        borderColor: '#4CAF50'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
-        }
+            // Format bytes to human readable format
+            function formatBytes(bytes, decimals = 2) {
+                if (bytes === 0) return '0 Bytes';
 
-        function updateVisualization(data) {
-            // Update storage chart
-            storageChart.data.datasets[0].data = [
-                data.volume1.used + data.volume2.used,
-                data.volume1.free + data.volume2.free
-            ];
-            storageChart.update();
+                const k = 1024;
+                const dm = decimals < 0 ? 0 : decimals;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
 
-            // Update timeline
-            if (data.metrics?.request_history) {
-                const timestamps = data.metrics.request_history.map(r => 
-                    new Date(r.timestamp * 1000).toLocaleTimeString());
-                timelineChart.data.labels = timestamps;
-                timelineChart.data.datasets[0].data = data.metrics.request_history.map(r => 1);
-                timelineChart.update();
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
             }
 
-            // Update last sync time
-            document.getElementById('lastSync').textContent = 
-                new Date(data.timestamp).toLocaleString();
-        }
+            function updateStorageVisual(data) {
+                try {
+                    // Check if we have valid data
+                    if (!data || !data.volume1 || !data.volume2) {
+                        console.error('Invalid data structure received:', data);
+                        return;
+                    }
 
-        socket.on('storage_update', updateVisualization);
-        initCharts();
+                    const now = Date.now();
+                    if (now - lastUpdateTime < throttleTime) return;
+                    lastUpdateTime = now;
+
+                    // Calculate percentages
+                    const vol1Percent = (data.volume1.used / data.volume1.total) * 100;
+                    const vol2Percent = (data.volume2.used / data.volume2.total) * 100;
+
+                    // Update progress bars
+                    document.getElementById('vol1Bar').style.width = vol1Percent + '%';
+                    document.getElementById('vol2Bar').style.width = vol2Percent + '%';
+
+                    // Update text information
+                    document.getElementById('vol1Info').textContent =
+                        `${formatBytes(data.volume1.used)} used of ${formatBytes(data.volume1.total)} (${vol1Percent.toFixed(1)}%)`;
+                    document.getElementById('vol2Info').textContent =
+                        `${formatBytes(data.volume2.used)} used of ${formatBytes(data.volume2.total)} (${vol2Percent.toFixed(1)}%)`;
+
+                    // Update sync status
+                    updateSyncStatus(data);
+                } catch (error) {
+                    console.error('Error updating visualization:', error);
+                }
+            }
+
+            function updateSyncStatus(data) {
+                try {
+                    const lastSyncElement = document.getElementById('lastSync');
+                    const healthStatusElement = document.getElementById('healthStatus');
+
+                    // Update last sync time
+                    if (data.timestamp) {
+                        const syncTime = new Date(data.timestamp);
+                        lastSyncElement.textContent = syncTime.toLocaleString();
+
+                        // Check if sync is recent (less than 5 minutes old)
+                        const isRecent = (Date.now() - syncTime) < 5 * 60 * 1000;
+                        lastSyncElement.parentElement.classList.toggle('error', !isRecent);
+                    }
+
+                    // Update health status
+                    if (data.health_status) {
+                        const vol1Healthy = data.health_status.volume1;
+                        const vol2Healthy = data.health_status.volume2;
+
+                        if (vol1Healthy && vol2Healthy) {
+                            healthStatusElement.textContent = 'All volumes healthy';
+                            healthStatusElement.style.color = '#4CAF50';
+                        } else {
+                            healthStatusElement.textContent = 'Issues detected with volumes';
+                            healthStatusElement.style.color = '#f44336';
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error updating sync status:', error);
+                }
+            }
+
+            // Handle socket connection
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                // Request initial data
+                socket.emit('request_data');
+            });
+
+            // Listen for storage updates
+            socket.on('storage_update', (data) => {
+                console.log('Received storage update:', data);
+                updateStorageVisual(data);
+            });
+
+            // Handle connection errors
+            socket.on('connect_error', (error) => {
+                console.error('Socket connection error:', error);
+                document.getElementById('healthStatus').textContent = 'Connection error';
+                document.getElementById('healthStatus').style.color = '#f44336';
+            });
+
+            // Sync now button
+            document.getElementById('syncNowBtn').addEventListener('click', () => {
+                socket.emit('request_sync');
+                document.getElementById('lastSync').textContent = 'Syncing...';
+            });
+        });
     </script>
 </body>
+
 </html>

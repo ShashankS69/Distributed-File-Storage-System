@@ -1,17 +1,61 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Upload Files</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .hidden {
+            display: none;
+        }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #4CAF50;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .message-error {
+            color: #f44336;
+            font-weight: bold;
+        }
+
+        .message-success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .file-details {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+        }
+    </style>
 </head>
+
 <body>
     <nav>
         <a href="/">Upload</a>
         <a href="/visualize">Visualize</a>
         <a href="/retrieve">Retrieve</a>
     </nav>
-    
+
     <div class="container">
         <div class="card">
             <h1><i class="fas fa-cloud-upload-alt"></i> Upload Files</h1>
@@ -22,22 +66,59 @@
                 <input type="file" id="fileInput" hidden>
                 <button onclick="document.getElementById('fileInput').click()" class="btn">Choose Files</button>
             </div>
+
+            <div id="fileDetails" class="file-details hidden">
+                <p><strong>File:</strong> <span id="fileName"></span></p>
+                <p><strong>Size:</strong> <span id="fileSize"></span></p>
+                <p><strong>Type:</strong> <span id="fileType"></span></p>
+                <button id="uploadBtn" class="btn">Upload File</button>
+                <button id="cancelBtn" class="btn">Cancel</button>
+            </div>
+
+            <div id="loader" class="loader hidden"></div>
             <div id="message"></div>
         </div>
     </div>
 
     <script>
         const dropZone = document.getElementById('dropZone');
-        
+        const fileInput = document.getElementById('fileInput');
+        const fileDetails = document.getElementById('fileDetails');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const fileType = document.getElementById('fileType');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+        const loader = document.getElementById('loader');
+        const messageDiv = document.getElementById('message');
+
+        // Maximum file size (100MB)
+        const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+        // Format bytes to readable size
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // Prevent default drag behaviors
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, preventDefaults, false);
         });
 
-        function preventDefaults (e) {
+        function preventDefaults(e) {
             e.preventDefault();
             e.stopPropagation();
         }
 
+        // Highlight drop area when file is dragged over it
         ['dragenter', 'dragover'].forEach(eventName => {
             dropZone.addEventListener(eventName, highlight, false);
         });
@@ -54,33 +135,111 @@
             dropZone.classList.remove('drag-over');
         }
 
+        // Handle dropped files
         dropZone.addEventListener('drop', handleDrop, false);
 
         function handleDrop(e) {
             const dt = e.dataTransfer;
             const files = dt.files;
-            handleFiles(files);
+            if (files.length > 0) {
+                validateAndShowFile(files[0]);
+            }
         }
 
-        function handleFiles(files) {
+        // Handle manually selected files
+        fileInput.addEventListener('change', function (e) {
+            if (this.files.length > 0) {
+                validateAndShowFile(this.files[0]);
+            }
+        });
+
+        // Validate file and show details
+        function validateAndShowFile(file) {
+            resetMessage();
+
+            // Check file size
+            if (file.size > MAX_FILE_SIZE) {
+                showMessage(`File is too large. Maximum size is ${formatBytes(MAX_FILE_SIZE)}.`, 'error');
+                return;
+            }
+
+            // Display file details
+            fileName.textContent = file.name;
+            fileSize.textContent = formatBytes(file.size);
+            fileType.textContent = file.type || 'Unknown';
+
+            // Show file details panel
+            fileDetails.classList.remove('hidden');
+
+            // Store file for later upload
+            fileDetails.file = file;
+        }
+
+        // Handle upload button click
+        uploadBtn.addEventListener('click', function () {
+            const file = fileDetails.file;
+            if (!file) {
+                showMessage('No file selected.', 'error');
+                return;
+            }
+
+            uploadFile(file);
+        });
+
+        // Handle cancel button click
+        cancelBtn.addEventListener('click', function () {
+            fileDetails.classList.add('hidden');
+            fileInput.value = '';
+            resetMessage();
+        });
+
+        // Handle file upload
+        async function uploadFile(file) {
+            // Show loader and hide file details
+            loader.classList.remove('hidden');
+            fileDetails.classList.add('hidden');
+
             const formData = new FormData();
-            formData.append('file', files[0]);
-            uploadFiles(formData);
-        }
+            formData.append('file', file);
 
-        async function uploadFiles(formData) {
             try {
                 const response = await fetch('/upload', {
                     method: 'POST',
                     body: formData
                 });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+
                 const data = await response.json();
-                document.getElementById('message').textContent = 
-                    data.success ? 'File uploaded successfully!' : data.error;
+
+                if (data.success) {
+                    showMessage('File uploaded successfully!', 'success');
+                    fileInput.value = '';
+                } else {
+                    showMessage(data.error || 'Upload failed for unknown reason.', 'error');
+                }
             } catch (error) {
-                document.getElementById('message').textContent = 'Upload failed';
+                showMessage(`Upload failed: ${error.message}`, 'error');
+            } finally {
+                loader.classList.add('hidden');
             }
+        }
+
+        // Show message with type (error or success)
+        function showMessage(text, type = 'success') {
+            messageDiv.textContent = text;
+            messageDiv.className = '';
+            messageDiv.classList.add(`message-${type}`);
+        }
+
+        // Reset message div
+        function resetMessage() {
+            messageDiv.textContent = '';
+            messageDiv.className = '';
         }
     </script>
 </body>
+
 </html>
