@@ -4,9 +4,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Storage Visualization</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>System Visualization</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -41,182 +41,146 @@
 
         .content-wrapper {
             padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
         }
 
-        .dashboard {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            justify-content: space-between;
-        }
-
-        .chart-row {
-            display: flex;
-            width: 100%;
-            gap: 15px;
-            justify-content: space-between;
-            margin-bottom: 15px;
-        }
-
-        .chart-container {
-            width: calc(50% - 10px);
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            padding: 15px;
-            border-radius: 5px;
-            height: 250px;
+        .visualization-container {
             background-color: white;
-        }
-
-        .secondary-chart {
-            width: calc(33% - 10px);
-            height: 200px;
-        }
-
-        .grid-container {
-            width: 100%;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            padding: 15px;
             border-radius: 5px;
-            margin-top: 20px;
-            background-color: white;
-        }
-
-        .file-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        .file-table th {
-            background-color: #f0f0f0;
-            padding: 10px;
-            text-align: left;
-            font-weight: bold;
-            border-bottom: 2px solid #ddd;
-        }
-
-        .file-table td {
-            padding: 12px 10px;
-            border-bottom: 1px solid #eee;
-        }
-
-        .file-table tr:hover {
-            background-color: #f9f9f9;
-        }
-
-        .chunk-indicator {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 2px;
-            align-items: center;
-        }
-
-        .chunk {
-            width: 10px;
-            height: 10px;
-            border-radius: 2px;
-            display: inline-block;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
         }
 
         h1,
-        h2 {
+        h2,
+        h3 {
             color: #333;
-            margin-top: 0;
         }
 
-        h2 {
-            font-size: 18px;
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
         }
 
-        .stats {
-            display: flex;
-            justify-content: space-around;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .stat-box {
-            text-align: center;
-            padding: 15px;
-            background-color: white;
+            background-color: #f8f9fa;
             border-radius: 5px;
-            width: 130px;
-            margin: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
+            padding: 15px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.05);
         }
 
-        .stat-value {
-            font-size: 18px;
-            font-weight: bold;
-        }
-
-        .volume-badge {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            color: white;
+        .status-indicator {
             display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
         }
 
-        .volume1 {
-            background-color: #3498db;
+        .status-active {
+            background-color: #28a745;
         }
 
-        .volume2 {
-            background-color: #2ecc71;
+        .status-inactive {
+            background-color: #dc3545;
         }
 
-        .sync-card {
-            background-color: white;
+        .mutex-state {
+            border: 1px solid #dee2e6;
             border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             padding: 15px;
-            margin-top: 20px;
-            margin-bottom: 10px;
+            margin-bottom: 20px;
         }
 
-        .sync-history {
-            max-height: 150px;
-            overflow-y: auto;
-            margin-top: 10px;
-        }
-
-        .sync-item {
+        .node-item {
             padding: 8px;
-            border-bottom: 1px solid #eee;
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .sync-item:last-child {
-            border-bottom: none;
-        }
-
-        .sync-badge {
-            display: inline-block;
-            padding: 3px 6px;
+            margin: 5px 0;
             border-radius: 3px;
-            font-size: 12px;
-            color: white;
         }
 
-        .sync-success {
-            background-color: #2ecc71;
+        .node-active {
+            background-color: #d4edda;
+            border-left: 3px solid #28a745;
         }
 
-        .sync-pending {
-            background-color: #f39c12;
+        .node-waiting {
+            background-color: #fff3cd;
+            border-left: 3px solid #ffc107;
         }
 
-        .sync-error {
-            background-color: #e74c3c;
+        .events-container {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
         }
 
-        .sync-status {
+        .event-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+
+        .event-enter {
+            background-color: #d4edda;
+            border-left: 3px solid #28a745;
+        }
+
+        .event-exit {
+            background-color: #f8d7da;
+            border-left: 3px solid #dc3545;
+        }
+
+        .event-grant {
+            background-color: #e2f0fb;
+            border-left: 3px solid #17a2b8;
+        }
+
+        .event-defer {
+            background-color: #fff3cd;
+            border-left: 3px solid #ffc107;
+        }
+
+        .clock-item {
+            padding: 8px;
+            margin: 5px 0;
+            background-color: #f8f9fa;
+            border-radius: 3px;
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
+        }
+
+        .btn {
+            background-color: #0d6efd;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .btn:hover {
+            background-color: #0b5ed7;
         }
     </style>
 </head>
@@ -229,106 +193,92 @@
     </div>
 
     <div class="content-wrapper">
-        <h1>Storage System Visualization</h1>
+        <h1>System Visualization</h1>
 
-        <div class="stats">
-            <div class="stat-box">
-                <div>Total Files</div>
-                <div class="stat-value" id="total-files">0</div>
+        <div class="visualization-container">
+            <h2>Storage Distribution</h2>
+            <div class="metrics-grid">
+                <div class="stat-box">
+                    <h3>Volume 1</h3>
+                    <p><strong>Total:</strong> <span id="vol1-total">{{ storage_info.volume1.total|filesizeformat
+                            }}</span></p>
+                    <p><strong>Used:</strong> <span id="vol1-used">{{ storage_info.volume1.used|filesizeformat }}</span>
+                    </p>
+                    <p><strong>Free:</strong> <span id="vol1-free">{{ storage_info.volume1.free|filesizeformat }}</span>
+                    </p>
+                    <p>
+                        <strong>Status:</strong>
+                        <span
+                            class="status-indicator {{ 'status-active' if storage_info.health_status.volume1 else 'status-inactive' }}"></span>
+                        <span id="vol1-status">{{ 'OK' if storage_info.health_status.volume1 else 'ERROR' }}</span>
+                    </p>
+                </div>
+                <div class="stat-box">
+                    <h3>Volume 2</h3>
+                    <p><strong>Total:</strong> <span id="vol2-total">{{ storage_info.volume2.total|filesizeformat
+                            }}</span></p>
+                    <p><strong>Used:</strong> <span id="vol2-used">{{ storage_info.volume2.used|filesizeformat }}</span>
+                    </p>
+                    <p><strong>Free:</strong> <span id="vol2-free">{{ storage_info.volume2.free|filesizeformat }}</span>
+                    </p>
+                    <p>
+                        <strong>Status:</strong>
+                        <span
+                            class="status-indicator {{ 'status-active' if storage_info.health_status.volume2 else 'status-inactive' }}"></span>
+                        <span id="vol2-status">{{ 'OK' if storage_info.health_status.volume2 else 'ERROR' }}</span>
+                    </p>
+                </div>
             </div>
-            <div class="stat-box">
-                <div>Total Size</div>
-                <div class="stat-value" id="total-size">0 MB</div>
-            </div>
-            <div class="stat-box">
-                <div>Volume 1 Health</div>
-                <div class="stat-value" id="vol1-health">Unknown</div>
-            </div>
-            <div class="stat-box">
-                <div>Volume 2 Health</div>
-                <div class="stat-value" id="vol2-health">Unknown</div>
-            </div>
-            <div class="stat-box">
-                <div>Sync Status</div>
-                <div class="stat-value" id="sync-status">Idle</div>
+            <div class="chart-container">
+                <canvas id="storage-chart"></canvas>
             </div>
         </div>
 
-        <div class="sync-card">
-            <h2>Synchronization Status</h2>
-            <div class="sync-status">
+        <div class="visualization-container">
+            <h2>Mutual Exclusion Visualization</h2>
+            <div class="mutex-state" id="mutex-state">
+                <h3>Current State</h3>
+                <p><strong>In Critical Section:</strong> <span id="in-critical-section">No</span></p>
+                <p><strong>Current Node:</strong> <span id="current-cs-node">None</span></p>
                 <div>
-                    <strong>Last Sync:</strong> <span id="last-sync-time">Never</span>
+                    <h4>Waiting Queue:</h4>
+                    <div id="waiting-queue"></div>
                 </div>
-                <div>
-                    <strong>Nodes Synced:</strong> <span id="synced-nodes">0</span>
-                </div>
-                <div>
-                    <button id="request-sync" onclick="requestSync()"
-                        style="padding: 5px 10px; background-color: #0d6efd; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        Request Health Sync
-                    </button>
+                <div style="margin-top: 15px;">
+                    <button class="btn" id="request-cs-btn">Request CS</button>
+                    <button class="btn" id="release-cs-btn">Release CS</button>
                 </div>
             </div>
-            <h3>Recent Sync History</h3>
-            <div class="sync-history" id="sync-history">
-                <div class="sync-item">
-                    <span>Waiting for sync events...</span>
-                </div>
+
+            <h3>Mutex Events</h3>
+            <div class="events-container" id="mutex-events">
+                <!-- Events will be dynamically added here -->
             </div>
         </div>
 
-        <div class="dashboard">
-            <div class="chart-row">
-                <div class="chart-container">
-                    <h2>Storage Usage</h2>
-                    <canvas id="storageChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h2>File Distribution</h2>
-                    <canvas id="distributionChart"></canvas>
-                </div>
+        <div class="visualization-container">
+            <h2>Lamport's Logical Clock</h2>
+            <div class="stat-box">
+                <h3>Current Clock Value</h3>
+                <p><strong>Logical Clock:</strong> <span id="logical-clock">0</span></p>
             </div>
 
-            <div class="chart-row">
-                <div class="chart-container secondary-chart">
-                    <h2>Storage Trend</h2>
-                    <canvas id="storageTrendChart"></canvas>
-                </div>
-                <div class="chart-container secondary-chart">
-                    <h2>Upload Activity</h2>
-                    <canvas id="uploadActivityChart"></canvas>
-                </div>
-                <div class="chart-container secondary-chart">
-                    <h2>File Type Distribution</h2>
-                    <canvas id="fileTypeChart"></canvas>
-                </div>
+            <h3>Clock History</h3>
+            <div class="events-container" id="clock-events">
+                <!-- Clock events will be dynamically added here -->
             </div>
-        </div>
 
-        <div class="grid-container">
-            <h2>Files List</h2>
-            <table class="file-table">
-                <thead>
-                    <tr>
-                        <th>Filename</th>
-                        <th>Size</th>
-                        <th>Chunks</th>
-                        <th>Distribution</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="file-tbody">
-                </tbody>
-            </table>
+            <div class="chart-container">
+                <canvas id="clock-chart"></canvas>
+            </div>
         </div>
     </div>
 
     <script>
         const socket = io();
-        let storageChart, distributionChart, storageTrendChart, uploadActivityChart, fileTypeChart;
-        let storageHistory = [];
-        let syncHistory = [];
+        let storageChart;
+        let clockChart;
+        let clockData = [];
 
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
@@ -339,64 +289,22 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        function initCharts(data) {
-            const storageCtx = document.getElementById('storageChart').getContext('2d');
-            storageChart = new Chart(storageCtx, {
-                type: 'pie',
+        function initStorageChart(data) {
+            const ctx = document.getElementById('storage-chart').getContext('2d');
+            storageChart = new Chart(ctx, {
+                type: 'bar',
                 data: {
-                    labels: ['Volume 1 Used', 'Volume 1 Free', 'Volume 2 Used', 'Volume 2 Free'],
-                    datasets: [{
-                        data: [
-                            data.volume1.used,
-                            data.volume1.total - data.volume1.used,
-                            data.volume2.used,
-                            data.volume2.total - data.volume2.used
-                        ],
-                        backgroundColor: ['#3498db', '#93c5fd', '#2ecc71', '#a7f3d0']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 10
-                                }
-                            }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function (context) {
-                                    const value = context.raw;
-                                    const percentage = Math.round((value / (data.volume1.total + data.volume2.total)) * 100);
-                                    return `${context.label}: ${formatBytes(value)} (${percentage}%)`;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            const trendCtx = document.getElementById('storageTrendChart').getContext('2d');
-            storageTrendChart = new Chart(trendCtx, {
-                type: 'line',
-                data: {
-                    labels: [...Array(10).keys()].map(n => `T-${9 - n}`),
+                    labels: ['Volume 1', 'Volume 2'],
                     datasets: [
                         {
-                            label: 'Volume 1',
-                            data: Array(10).fill(0),
-                            borderColor: '#3498db',
-                            tension: 0.1
+                            label: 'Used Space',
+                            data: [data.volume1.used, data.volume2.used],
+                            backgroundColor: 'rgba(54, 162, 235, 0.7)'
                         },
                         {
-                            label: 'Volume 2',
-                            data: Array(10).fill(0),
-                            borderColor: '#2ecc71',
-                            tension: 0.1
+                            label: 'Free Space',
+                            data: [data.volume1.free, data.volume2.free],
+                            backgroundColor: 'rgba(75, 192, 192, 0.7)'
                         }
                     ]
                 },
@@ -404,256 +312,23 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
+                        x: {
+                            stacked: true
+                        },
                         y: {
-                            beginAtZero: true,
+                            stacked: true,
                             ticks: {
                                 callback: function (value) {
-                                    return formatBytes(value, 0);
+                                    return formatBytes(value);
                                 }
                             }
                         }
                     },
                     plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 10
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            const activityCtx = document.getElementById('uploadActivityChart').getContext('2d');
-            uploadActivityChart = new Chart(activityCtx, {
-                type: 'bar',
-                data: {
-                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                    datasets: [{
-                        label: 'Uploads',
-                        data: [0, 0, 0, 0, 0, 0, 0],
-                        backgroundColor: '#9b59b6'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 10
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            const fileTypeCtx = document.getElementById('fileTypeChart').getContext('2d');
-            fileTypeChart = new Chart(fileTypeCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Documents', 'Images', 'Videos', 'Others'],
-                    datasets: [{
-                        data: [0, 0, 0, 0],
-                        backgroundColor: ['#f1c40f', '#e74c3c', '#1abc9c', '#95a5a6']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 10
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            storageHistory.push({
-                time: new Date(),
-                vol1: data.volume1.used,
-                vol2: data.volume2.used
-            });
-            if (storageHistory.length > 10) {
-                storageHistory.shift();
-            }
-            updateStorageTrendChart();
-        }
-
-        function updateStorageTrendChart() {
-            if (storageTrendChart && storageHistory.length > 0) {
-                storageTrendChart.data.labels = storageHistory.map((_, idx) =>
-                    `T-${storageHistory.length - 1 - idx}`);
-                storageTrendChart.data.datasets[0].data = storageHistory.map(h => h.vol1);
-                storageTrendChart.data.datasets[1].data = storageHistory.map(h => h.vol2);
-                storageTrendChart.update();
-            }
-        }
-
-        function updateFileGrid() {
-            fetch('/files')
-                .then(response => response.json())
-                .then(files => {
-                    const tableBody = document.getElementById('file-tbody');
-                    tableBody.innerHTML = '';
-
-                    document.getElementById('total-files').textContent = files.length;
-
-                    let totalSize = 0;
-                    let volumeDistribution = {
-                        'volume1': 0,
-                        'volume2': 0
-                    };
-
-                    let fileTypes = {
-                        'Documents': 0,
-                        'Images': 0,
-                        'Videos': 0,
-                        'Others': 0
-                    };
-
-                    files.forEach(file => {
-                        totalSize += file.size;
-
-                        const ext = file.filename.split('.').pop().toLowerCase();
-                        if (['doc', 'docx', 'pdf', 'txt', 'xls', 'xlsx'].includes(ext)) {
-                            fileTypes['Documents']++;
-                        } else if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg'].includes(ext)) {
-                            fileTypes['Images']++;
-                        } else if (['mp4', 'mov', 'avi', 'wmv', 'flv', 'mkv'].includes(ext)) {
-                            fileTypes['Videos']++;
-                        } else {
-                            fileTypes['Others']++;
-                        }
-
-                        const row = document.createElement('tr');
-
-                        const filenameCell = document.createElement('td');
-                        filenameCell.textContent = file.filename;
-                        row.appendChild(filenameCell);
-
-                        const sizeCell = document.createElement('td');
-                        sizeCell.textContent = formatBytes(file.size);
-                        row.appendChild(sizeCell);
-
-                        const chunksCell = document.createElement('td');
-                        chunksCell.textContent = file.chunks;
-                        row.appendChild(chunksCell);
-
-                        const distributionCell = document.createElement('td');
-                        const chunkIndicator = document.createElement('div');
-                        chunkIndicator.className = 'chunk-indicator';
-
-                        const vol1Badge = document.createElement('span');
-                        vol1Badge.className = 'volume-badge volume1';
-                        vol1Badge.textContent = 'Vol 1';
-                        chunkIndicator.appendChild(vol1Badge);
-
-                        for (let i = 0; i < Math.min(file.chunks, 5); i++) {
-                            const chunkDiv = document.createElement('div');
-                            chunkDiv.className = 'chunk';
-                            chunkDiv.style.backgroundColor = Math.random() > 0.5 ? '#3498db' : '#2ecc71';
-                            chunkIndicator.appendChild(chunkDiv);
-                        }
-
-                        if (file.chunks > 5) {
-                            const ellipsis = document.createElement('span');
-                            ellipsis.textContent = '...';
-                            chunkIndicator.appendChild(ellipsis);
-                        }
-
-                        const vol2Badge = document.createElement('span');
-                        vol2Badge.className = 'volume-badge volume2';
-                        vol2Badge.textContent = 'Vol 2';
-                        chunkIndicator.appendChild(vol2Badge);
-
-                        distributionCell.appendChild(chunkIndicator);
-                        row.appendChild(distributionCell);
-
-                        const actionsCell = document.createElement('td');
-                        const downloadLink = document.createElement('a');
-                        downloadLink.href = `/download/${file.filename}`;
-                        downloadLink.textContent = 'Download';
-                        downloadLink.style.marginRight = '10px';
-                        actionsCell.appendChild(downloadLink);
-
-                        const deleteBtn = document.createElement('button');
-                        deleteBtn.textContent = 'Delete';
-                        deleteBtn.onclick = function () { deleteFile(file.filename); };
-                        deleteBtn.style.border = 'none';
-                        deleteBtn.style.background = '#dc3545';
-                        deleteBtn.style.color = 'white';
-                        deleteBtn.style.padding = '3px 8px';
-                        deleteBtn.style.borderRadius = '3px';
-                        deleteBtn.style.cursor = 'pointer';
-                        actionsCell.appendChild(deleteBtn);
-
-                        row.appendChild(actionsCell);
-
-                        tableBody.appendChild(row);
-                    });
-
-                    document.getElementById('total-size').textContent = formatBytes(totalSize);
-
-                    if (fileTypeChart) {
-                        fileTypeChart.data.datasets[0].data = [
-                            fileTypes['Documents'],
-                            fileTypes['Images'],
-                            fileTypes['Videos'],
-                            fileTypes['Others']
-                        ];
-                        fileTypeChart.update();
-                    }
-
-                    const storageInfo = {{ storage_info | tojson
-                }};
-        if (storageInfo.distribution) {
-            const vol1Count = storageInfo.distribution.volume1;
-            const vol2Count = storageInfo.distribution.volume2;
-
-            if (distributionChart) {
-                distributionChart.destroy();
-            }
-
-            const distCtx = document.getElementById('distributionChart').getContext('2d');
-            distributionChart = new Chart(distCtx, {
-                type: 'pie',
-                data: {
-                    labels: ['Volume 1', 'Volume 2'],
-                    datasets: [{
-                        data: [vol1Count, vol2Count],
-                        backgroundColor: ['#3498db', '#2ecc71']
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                font: {
-                                    size: 10
-                                }
-                            }
-                        },
                         tooltip: {
                             callbacks: {
                                 label: function (context) {
-                                    const value = context.raw;
-                                    const total = vol1Count + vol2Count;
-                                    const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                                    return `${context.label}: ${value} chunks (${percentage}%)`;
+                                    return context.dataset.label + ': ' + formatBytes(context.raw);
                                 }
                             }
                         }
@@ -661,160 +336,211 @@
                 }
             });
         }
+
+        function initClockChart() {
+            const ctx = document.getElementById('clock-chart').getContext('2d');
+            clockChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Logical Clock Value',
+                        data: [],
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateStorageChart(data) {
+            storageChart.data.datasets[0].data = [data.volume1.used, data.volume2.used];
+            storageChart.data.datasets[1].data = [data.volume1.free, data.volume2.free];
+            storageChart.update();
+        }
+
+        function updateClockChart(clockValue) {
+            // Keep only the last 20 values
+            if (clockChart.data.labels.length > 20) {
+                clockChart.data.labels.shift();
+                clockChart.data.datasets[0].data.shift();
+            }
+
+            const now = new Date();
+            const timeLabel = now.getHours().toString().padStart(2, '0') + ':' +
+                now.getMinutes().toString().padStart(2, '0') + ':' +
+                now.getSeconds().toString().padStart(2, '0');
+
+            clockChart.data.labels.push(timeLabel);
+            clockChart.data.datasets[0].data.push(clockValue);
+            clockChart.update();
+        }
+
+        function updateMutexState(data) {
+            document.getElementById('in-critical-section').textContent = data.in_critical_section ? 'Yes' : 'No';
+            document.getElementById('current-cs-node').textContent = data.current_cs_node ? data.current_cs_node : 'None';
+            document.getElementById('logical-clock').textContent = data.logical_clock;
+
+            // Update waiting queue
+            const waitingQueueDiv = document.getElementById('waiting-queue');
+            waitingQueueDiv.innerHTML = '';
+
+            if (data.waiting_queue.length === 0) {
+                waitingQueueDiv.innerHTML = '<p>No nodes waiting</p>';
+            } else {
+                data.waiting_queue.forEach(node => {
+                    const nodeDiv = document.createElement('div');
+                    nodeDiv.className = 'node-item node-waiting';
+                    nodeDiv.textContent = node;
+                    waitingQueueDiv.appendChild(nodeDiv);
+                });
+            }
+
+            // Update clock chart
+            updateClockChart(data.logical_clock);
+        }
+
+        function updateMutexEvents(data) {
+            const eventsContainer = document.getElementById('mutex-events');
+            eventsContainer.innerHTML = '';
+
+            data.mutex_events.forEach(event => {
+                const eventDiv = document.createElement('div');
+                let eventClass = '';
+                let eventText = '';
+
+                if (event.action === 'enter') {
+                    eventClass = 'event-enter';
+                    eventText = `Node ${event.node} entered critical section (timestamp: ${event.timestamp})`;
+                } else if (event.action === 'exit') {
+                    eventClass = 'event-exit';
+                    eventText = `Node ${event.node} exited critical section (timestamp: ${event.timestamp})`;
+                } else if (event.action === 'grant') {
+                    eventClass = 'event-grant';
+                    eventText = `Node ${event.from} granted request to node ${event.to} (timestamp: ${event.timestamp})`;
+                } else if (event.action === 'defer') {
+                    eventClass = 'event-defer';
+                    eventText = `Node ${event.from} deferred request from node ${event.to} (timestamp: ${event.timestamp})`;
+                }
+
+                eventDiv.className = `event-item ${eventClass}`;
+                eventDiv.textContent = eventText;
+                eventsContainer.appendChild(eventDiv);
+            });
+        }
+
+        function updateClockEvents(data) {
+            const eventsContainer = document.getElementById('clock-events');
+            eventsContainer.innerHTML = '';
+
+            data.clock_history.forEach(event => {
+                const eventDiv = document.createElement('div');
+                eventDiv.className = 'clock-item';
+                eventDiv.innerHTML = `
+                    <span>Node ${event.node}: Clock = ${event.value}</span>
+                    <span>${event.reason}</span>
+                `;
+                eventsContainer.appendChild(eventDiv);
+            });
+        }
+
+        // Socket.io event listeners
+        socket.on('connect', function () {
+            console.log('Socket connected');
+            fetchInitialData();
+        });
+
+        socket.on('storage_update', function (data) {
+            document.getElementById('vol1-used').textContent = formatBytes(data.volume1.used);
+            document.getElementById('vol1-free').textContent = formatBytes(data.volume1.free);
+            document.getElementById('vol2-used').textContent = formatBytes(data.volume2.used);
+            document.getElementById('vol2-free').textContent = formatBytes(data.volume2.free);
+            document.getElementById('vol1-status').textContent = data.health_status.volume1 ? 'OK' : 'ERROR';
+            document.getElementById('vol2-status').textContent = data.health_status.volume2 ? 'OK' : 'ERROR';
+
+            if (storageChart) {
+                updateStorageChart(data);
+            }
+        });
+
+        function fetchInitialData() {
+            // Fetch initial storage data and initialize charts
+            fetch('/api/metrics')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Initial metrics loaded:', data);
+                });
+
+            // Fetch mutex state
+            fetch('/api/mutex_state')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Mutex state loaded:', data);
+                    updateMutexState(data);
+                });
+
+            // Fetch mutex events
+            fetch('/api/mutex_metrics')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Mutex metrics loaded:', data);
+                    updateMutexEvents(data);
+                });
+
+            // Fetch clock metrics
+            fetch('/api/clock_metrics')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Clock metrics loaded:', data);
+                    updateClockEvents(data);
                 });
         }
 
-        function deleteFile(filename) {
-            if (confirm(`Are you sure you want to delete ${filename}?`)) {
-                fetch(`/delete/${filename}`, {
-                    method: 'DELETE'
-                })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            alert('File deleted successfully');
-                            updateFileGrid();
-                        } else {
-                            alert('Error: ' + data.error);
-                        }
-                    })
-                    .catch(error => {
-                        alert('Error: ' + error);
-                    });
-            }
-        }
+        // Initialize charts when page loads
+        window.onload = function () {
+            initStorageChart({{ storage_info| tojson }});
+        initClockChart();
 
-        function requestSync() {
+        // Set up polling for mutex state and metrics
+        setInterval(() => {
+            fetch('/api/mutex_state')
+                .then(response => response.json())
+                .then(data => {
+                    updateMutexState(data);
+                });
+
+            fetch('/api/mutex_metrics')
+                .then(response => response.json())
+                .then(data => {
+                    updateMutexEvents(data);
+                });
+
+            fetch('/api/clock_metrics')
+                .then(response => response.json())
+                .then(data => {
+                    updateClockEvents(data);
+                });
+        }, 2000);
+
+        // Set up request and release CS buttons
+        document.getElementById('request-cs-btn').addEventListener('click', function () {
             socket.emit('request_health_sync');
-            document.getElementById('sync-status').textContent = 'Syncing...';
-            addSyncEvent('Requested health synchronization', 'pending');
-        }
-
-        function addSyncEvent(message, status = 'success') {
-            const now = new Date();
-            const timeString = now.toLocaleTimeString();
-
-            syncHistory.push({
-                message: message,
-                time: timeString,
-                status: status,
-                timestamp: now
-            });
-
-            if (syncHistory.length > 10) {
-                syncHistory.shift();
-            }
-
-            updateSyncHistory();
-
-            if (status === 'success') {
-                document.getElementById('last-sync-time').textContent = timeString;
-            }
-        }
-
-        function updateSyncHistory() {
-            const historyContainer = document.getElementById('sync-history');
-            historyContainer.innerHTML = '';
-
-            syncHistory.forEach(event => {
-                const item = document.createElement('div');
-                item.className = 'sync-item';
-
-                const message = document.createElement('span');
-                message.textContent = event.message;
-
-                const timeAndStatus = document.createElement('div');
-
-                const time = document.createElement('span');
-                time.textContent = event.time + ' ';
-
-                const status = document.createElement('span');
-                status.className = `sync-badge sync-${event.status}`;
-                status.textContent = event.status.toUpperCase();
-
-                timeAndStatus.appendChild(time);
-                timeAndStatus.appendChild(status);
-
-                item.appendChild(message);
-                item.appendChild(timeAndStatus);
-
-                historyContainer.appendChild(item);
-            });
-        }
-
-        socket.on('storage_update', function (data) {
-            document.getElementById('vol1-health').textContent = data.health_status.volume1 ? 'OK' : 'ERROR';
-            document.getElementById('vol2-health').textContent = data.health_status.volume2 ? 'OK' : 'ERROR';
-
-            storageHistory.push({
-                time: new Date(),
-                vol1: data.volume1.used,
-                vol2: data.volume2.used
-            });
-            if (storageHistory.length > 10) {
-                storageHistory.shift();
-            }
-
-            if (storageChart) {
-                storageChart.data.datasets[0].data = [
-                    data.volume1.used,
-                    data.volume1.total - data.volume1.used,
-                    data.volume2.used,
-                    data.volume2.total - data.volume2.used
-                ];
-                storageChart.update();
-            } else {
-                initCharts(data);
-            }
-
-            updateStorageTrendChart();
-            updateFileGrid();
-
-            if (uploadActivityChart) {
-                const day = new Date().getDay();
-                uploadActivityChart.data.datasets[0].data[day] += 1;
-                uploadActivityChart.update();
-            }
-
-            if (data.health_status) {
-                addSyncEvent('Volume health status updated', 'success');
-                document.getElementById('sync-status').textContent = 'Synced';
-            }
         });
 
-        socket.on('cs_request', function (data) {
-            addSyncEvent(`Sync request from ${data.from_node.substring(0, 6)}...`, 'pending');
+        document.getElementById('release-cs-btn').addEventListener('click', function () {
+            socket.emit('release_cs');
         });
-
-        socket.on('cs_reply', function (data) {
-            addSyncEvent(`Sync reply received from ${data.from_node ? data.from_node.substring(0, 6) + '...' : 'a node'}`, 'success');
-        });
-
-        socket.on('health_update', function (data) {
-            const syncNodes = document.getElementById('synced-nodes');
-            const currentCount = parseInt(syncNodes.textContent) || 0;
-            syncNodes.textContent = currentCount + 1;
-
-            addSyncEvent('Health data synchronized', 'success');
-            document.getElementById('sync-status').textContent = 'Synced';
-        });
-
-        document.addEventListener('DOMContentLoaded', function () {
-            const storageInfo = {{ storage_info | tojson
-        }};
-        initCharts(storageInfo);
-
-        document.getElementById('vol1-health').textContent =
-            storageInfo.health_status.volume1 ? 'OK' : 'ERROR';
-        document.getElementById('vol2-health').textContent =
-            storageInfo.health_status.volume2 ? 'OK' : 'ERROR';
-
-        updateFileGrid();
-
-        addSyncEvent('System initialized', 'success');
-        document.getElementById('last-sync-time').textContent = new Date().toLocaleTimeString();
-        document.getElementById('synced-nodes').textContent = '1';
-        });
+        };
     </script>
 </body>
 

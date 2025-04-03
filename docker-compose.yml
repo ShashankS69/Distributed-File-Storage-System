@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    volumes:
+      # Mount the code for live reload during development
+      - .:/app
+      # Use a named volume for dependencies to avoid reinstalling them
+      - python-deps:/usr/local/lib/python3.11/site-packages
+    ports:
+      - "6969:6969"
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+      - PYTHONIOENCODING=utf-8
+    tty: true
+    stdin_open: true
+    # More verbose logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  python-deps:
+    # This volume persists installed dependencies between container restarts

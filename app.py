@@ -21,15 +21,35 @@ VOLUME2_PATH = os.path.join(os.path.dirname(
 os.makedirs(VOLUME1_PATH, exist_ok=True)
 os.makedirs(VOLUME2_PATH, exist_ok=True)
 
-CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+CHUNK_SIZE = 1024 * 1024
 
-# Ricart-Agrawala implementation
+
+class LamportClock:
+    def __init__(self):
+        self.value = 0
+        self.lock = threading.Lock()
+
+    def get_time(self):
+        with self.lock:
+            return self.value
+
+    def increment(self):
+        with self.lock:
+            self.value += 1
+            return self.value
+
+    def update(self, received_time):
+        with self.lock:
+            self.value = max(self.value, received_time) + 1
+            return self.value
 
 
 class RicartAgrawala:
     def __init__(self):
-        self.timestamp = 0
+        self.clock = LamportClock()
         self.requesting = False
+        self.in_critical_section = False
+        self.request_timestamp = 0
         self.replies_received = set()
         self.deferred_replies = []
         self.lock = threading.Lock()
@@ -38,62 +58,121 @@ class RicartAgrawala:
             'volume1': True,
             'volume2': True
         }
+        # Track queue of nodes waiting for the critical section
+        self.waiting_queue = []
+        # Current node in critical section (if any)
+        self.current_cs_node = None
 
     def request_cs(self, node_id):
         with self.lock:
             self.requesting = True
-            self.timestamp = time.time()
+            # Increment the logical clock when sending a message
+            self.request_timestamp = self.clock.increment()
             self.replies_received = set()
+
+            # Add self to waiting queue
+            if node_id not in self.waiting_queue:
+                self.waiting_queue.append(node_id)
 
             # Broadcast request to all nodes
             for node in self.nodes:
                 if node != node_id:
                     socketio.emit('cs_request', {
                         'from_node': node_id,
-                        'timestamp': self.timestamp
+                        'timestamp': self.request_timestamp
                     }, room=node)
 
             # If we're the only node, we can enter CS immediately
             if len(self.nodes) <= 1:
-                return self.timestamp
+                self.in_critical_section = True
+                self.current_cs_node = node_id
+                metrics.log_cs_entry(node_id, self.request_timestamp)
+                return self.request_timestamp
 
-            # Wait for replies (in a real implementation, we'd use a condition variable)
-            # For simplicity, we'll return immediately and check replies in another function
-            return self.timestamp
+            # Return current timestamp
+            return self.request_timestamp
 
     def receive_request(self, from_node, request_timestamp, my_node_id):
         with self.lock:
-            # If we're also requesting and our timestamp is lower (or equal but our ID is lower),
-            # defer the reply
-            if (self.requesting and
-                (self.timestamp < request_timestamp or
-                 (self.timestamp == request_timestamp and my_node_id < from_node))):
+            # Update clock based on received timestamp
+            self.clock.update(request_timestamp)
+
+            # Add requesting node to waiting queue if not already there
+            if from_node not in self.waiting_queue:
+                self.waiting_queue.append(from_node)
+
+            # Check if we should defer the reply
+            # If we're requesting and have higher priority (lower timestamp or same timestamp but lower ID)
+            # or if we're already in critical section
+            should_defer = False
+
+            if self.in_critical_section:
+                should_defer = True
+            elif self.requesting and (
+                self.request_timestamp < request_timestamp or
+                (self.request_timestamp == request_timestamp and my_node_id < from_node)
+            ):
+                should_defer = True
+
+            if should_defer:
                 self.deferred_replies.append(from_node)
+                metrics.log_request_deferred(
+                    my_node_id, from_node, self.clock.get_time())
             else:
-                # Otherwise, reply immediately
+                # Reply immediately - increment clock for sending message
+                reply_timestamp = self.clock.increment()
                 socketio.emit('cs_reply', {
                     'from_node': my_node_id,
-                    'timestamp': time.time()
+                    'timestamp': reply_timestamp
                 }, room=from_node)
+                metrics.log_request_granted(
+                    my_node_id, from_node, reply_timestamp)
 
-    def receive_reply(self, from_node):
+    def receive_reply(self, from_node, received_timestamp):
         with self.lock:
+            # Update clock based on received timestamp
+            self.clock.update(received_timestamp)
+
             self.replies_received.add(from_node)
             # If we have all replies, we can enter the critical section
             if self.requesting and len(self.replies_received) >= len(self.nodes) - 1:
-                # Enter critical section - update health status
+                # Enter critical section
+                self.requesting = False
+                self.in_critical_section = True
+                self.current_cs_node = request.sid
+                metrics.log_cs_entry(request.sid, self.clock.get_time())
+
+                # Update health status
                 self.update_health_status()
-                # Then release
-                self.release_cs()
 
     def release_cs(self):
         with self.lock:
-            self.requesting = False
+            if not self.in_critical_section:
+                return
+
+            # Exit critical section
+            self.in_critical_section = False
+            node_id = self.current_cs_node
+            self.current_cs_node = None
+
+            # Log CS exit
+            exit_timestamp = self.clock.increment()
+            metrics.log_cs_exit(node_id, exit_timestamp)
+
+            # Remove the node from waiting queue
+            if node_id in self.waiting_queue:
+                self.waiting_queue.remove(node_id)
+
             # Send deferred replies
             for node in self.deferred_replies:
+                # Increment clock for each message sent
+                reply_timestamp = self.clock.increment()
                 socketio.emit('cs_reply', {
-                    'timestamp': time.time()
+                    'from_node': node_id,
+                    'timestamp': reply_timestamp
                 }, room=node)
+                metrics.log_request_granted(node_id, node, reply_timestamp)
+
             self.deferred_replies = []
 
     def update_health_status(self):
@@ -114,7 +193,21 @@ class RicartAgrawala:
                 self.nodes.remove(node_id)
             if node_id in self.replies_received:
                 self.replies_received.remove(node_id)
+            if node_id in self.waiting_queue:
+                self.waiting_queue.remove(node_id)
+            if self.current_cs_node == node_id:
+                self.current_cs_node = None
+                self.in_critical_section = False
             return len(self.nodes)
+
+    def get_mutex_state(self):
+        with self.lock:
+            return {
+                'in_critical_section': self.in_critical_section,
+                'current_cs_node': self.current_cs_node,
+                'waiting_queue': list(self.waiting_queue),
+                'logical_clock': self.clock.get_time()
+            }
 
 
 ra = RicartAgrawala()
@@ -126,6 +219,8 @@ class SystemMetrics:
         self.cs_usage = []
         self.node_interactions = {}
         self.nodes = set()
+        self.mutex_events = []
+        self.logical_clock_history = []
 
     def log_request(self, from_node, to_node, timestamp):
         self.nodes.add(from_node)
@@ -141,12 +236,77 @@ class SystemMetrics:
         key = f"{from_node}-{to_node}"
         self.node_interactions[key] = self.node_interactions.get(key, 0) + 1
 
+    def log_cs_entry(self, node, timestamp):
+        self.cs_usage.append({
+            'node': node,
+            'action': 'enter',
+            'timestamp': timestamp,
+            'time': datetime.now().isoformat()
+        })
+        self.mutex_events.append({
+            'node': node,
+            'action': 'enter',
+            'timestamp': timestamp,
+            'time': datetime.now().isoformat()
+        })
+
+    def log_cs_exit(self, node, timestamp):
+        self.cs_usage.append({
+            'node': node,
+            'action': 'exit',
+            'timestamp': timestamp,
+            'time': datetime.now().isoformat()
+        })
+        self.mutex_events.append({
+            'node': node,
+            'action': 'exit',
+            'timestamp': timestamp,
+            'time': datetime.now().isoformat()
+        })
+
+    def log_request_granted(self, from_node, to_node, timestamp):
+        self.mutex_events.append({
+            'from': from_node,
+            'to': to_node,
+            'action': 'grant',
+            'timestamp': timestamp,
+            'time': datetime.now().isoformat()
+        })
+
+    def log_request_deferred(self, from_node, to_node, timestamp):
+        self.mutex_events.append({
+            'from': from_node,
+            'to': to_node,
+            'action': 'defer',
+            'timestamp': timestamp,
+            'time': datetime.now().isoformat()
+        })
+
+    def log_clock_update(self, node, value, reason):
+        self.logical_clock_history.append({
+            'node': node,
+            'value': value,
+            'reason': reason,
+            'time': datetime.now().isoformat()
+        })
+
     def get_metrics(self):
         return {
             'request_history': self.request_history[-20:],  # Last 20 events
             'cs_usage': self.cs_usage[-10:],  # Last 10 CS usages
             'node_interactions': self.node_interactions,
             'nodes': list(self.nodes)
+        }
+
+    def get_mutex_metrics(self):
+        return {
+            'mutex_events': self.mutex_events[-20:],
+            'cs_usage': self.cs_usage[-10:]
+        }
+
+    def get_clock_metrics(self):
+        return {
+            'clock_history': self.logical_clock_history[-20:]
         }
 
 
@@ -351,6 +511,21 @@ def get_metrics():
     return jsonify(metrics.get_metrics())
 
 
+@app.route('/api/mutex_state')
+def get_mutex_state():
+    return jsonify(ra.get_mutex_state())
+
+
+@app.route('/api/mutex_metrics')
+def get_mutex_metrics():
+    return jsonify(metrics.get_mutex_metrics())
+
+
+@app.route('/api/clock_metrics')
+def get_clock_metrics():
+    return jsonify(metrics.get_clock_metrics())
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template('error.html', error="Page not found"), 404
@@ -384,7 +559,14 @@ def handle_cs_request(data):
 def handle_cs_reply(data):
     # Handle reply to critical section request
     from_node = data.get('from_node')
-    ra.receive_reply(from_node)
+    timestamp = data.get('timestamp')
+    # Update with the timestamp from the reply
+    ra.receive_reply(from_node, timestamp)
+
+
+@socketio.on('release_cs')
+def handle_release_cs():
+    ra.release_cs()
 
 
 @socketio.on('request_health_sync')
@@ -408,4 +590,4 @@ def handle_health_update(data):
 
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True)
+    socketio.run(app, debug=True, port=6969, allow_unsafe_werkzeug=True)
