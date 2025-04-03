@@ -21,7 +21,7 @@ VOLUME2_PATH = os.path.join(os.path.dirname(
 os.makedirs(VOLUME1_PATH, exist_ok=True)
 os.makedirs(VOLUME2_PATH, exist_ok=True)
 
-CHUNK_SIZE = 1024 * 1024
+CHUNK_SIZE = 1024 * 1024  # 1MB chunks
 
 
 class LamportClock:
@@ -69,11 +69,9 @@ class RicartAgrawala:
             # Increment the logical clock when sending a message
             self.request_timestamp = self.clock.increment()
             self.replies_received = set()
-
             # Add self to waiting queue
             if node_id not in self.waiting_queue:
                 self.waiting_queue.append(node_id)
-
             # Broadcast request to all nodes
             for node in self.nodes:
                 if node != node_id:
@@ -81,14 +79,14 @@ class RicartAgrawala:
                         'from_node': node_id,
                         'timestamp': self.request_timestamp
                     }, room=node)
-
             # If we're the only node, we can enter CS immediately
             if len(self.nodes) <= 1:
                 self.in_critical_section = True
                 self.current_cs_node = node_id
                 metrics.log_cs_entry(node_id, self.request_timestamp)
+                # Emit to the client that they have CS access
+                socketio.emit('cs_access_granted', room=node_id)
                 return self.request_timestamp
-
             # Return current timestamp
             return self.request_timestamp
 
@@ -96,16 +94,13 @@ class RicartAgrawala:
         with self.lock:
             # Update clock based on received timestamp
             self.clock.update(request_timestamp)
-
             # Add requesting node to waiting queue if not already there
             if from_node not in self.waiting_queue:
                 self.waiting_queue.append(from_node)
-
             # Check if we should defer the reply
             # If we're requesting and have higher priority (lower timestamp or same timestamp but lower ID)
             # or if we're already in critical section
             should_defer = False
-
             if self.in_critical_section:
                 should_defer = True
             elif self.requesting and (
@@ -113,7 +108,6 @@ class RicartAgrawala:
                 (self.request_timestamp == request_timestamp and my_node_id < from_node)
             ):
                 should_defer = True
-
             if should_defer:
                 self.deferred_replies.append(from_node)
                 metrics.log_request_deferred(
@@ -132,7 +126,6 @@ class RicartAgrawala:
         with self.lock:
             # Update clock based on received timestamp
             self.clock.update(received_timestamp)
-
             self.replies_received.add(from_node)
             # If we have all replies, we can enter the critical section
             if self.requesting and len(self.replies_received) >= len(self.nodes) - 1:
@@ -141,7 +134,8 @@ class RicartAgrawala:
                 self.in_critical_section = True
                 self.current_cs_node = request.sid
                 metrics.log_cs_entry(request.sid, self.clock.get_time())
-
+                # Notify the client that they can enter CS
+                socketio.emit('cs_access_granted', room=request.sid)
                 # Update health status
                 self.update_health_status()
 
@@ -149,20 +143,16 @@ class RicartAgrawala:
         with self.lock:
             if not self.in_critical_section:
                 return
-
             # Exit critical section
             self.in_critical_section = False
             node_id = self.current_cs_node
             self.current_cs_node = None
-
             # Log CS exit
             exit_timestamp = self.clock.increment()
             metrics.log_cs_exit(node_id, exit_timestamp)
-
             # Remove the node from waiting queue
             if node_id in self.waiting_queue:
                 self.waiting_queue.remove(node_id)
-
             # Send deferred replies
             for node in self.deferred_replies:
                 # Increment clock for each message sent
@@ -172,7 +162,6 @@ class RicartAgrawala:
                     'timestamp': reply_timestamp
                 }, room=node)
                 metrics.log_request_granted(node_id, node, reply_timestamp)
-
             self.deferred_replies = []
 
     def update_health_status(self):
@@ -231,7 +220,6 @@ class SystemMetrics:
             'timestamp': timestamp,
             'type': 'request'
         })
-
         # Update interaction heatmap
         key = f"{from_node}-{to_node}"
         self.node_interactions[key] = self.node_interactions.get(key, 0) + 1
@@ -367,16 +355,131 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+    # Check if there are files in the request
+    if 'files' not in request.files and 'file' not in request.files:
+        return jsonify({'error': 'No files part'}), 400
 
-    file = request.files['file']
+    # Get all files from the request
+    files = []
+    if 'files' in request.files:
+        # Handle multiple files
+        files = request.files.getlist('files')
+    else:
+        # Handle single file (for backward compatibility)
+        files = [request.files['file']]
+
+    if not files or files[0].filename == '':
+        return jsonify({'error': 'No selected files'}), 400
+
+    # List to store results for each file
+    results = []
+
+    volume_info = get_volume_info()
+
+    for file in files:
+        filename = secure_filename(file.filename)
+        file_size = len(file.read())
+        file.seek(0)  # Reset file pointer
+
+        # Calculate chunks based on available space
+        total_chunks = math.ceil(file_size / CHUNK_SIZE)
+
+        # Store file metadata
+        metadata = {
+            'filename': filename,
+            'total_size': file_size,
+            'chunks': []
+        }
+
+        # Track if we have enough space for this file
+        enough_space = True
+
+        for i in range(total_chunks):
+            chunk = file.read(CHUNK_SIZE)
+            chunk_filename = f"{filename}.part{i}"
+
+            # Decide which volume to use based on available space
+            if volume_info['volume1']['free'] > len(chunk):
+                save_path = os.path.join(VOLUME1_PATH, chunk_filename)
+                volume = 'volume1'
+            elif volume_info['volume2']['free'] > len(chunk):
+                save_path = os.path.join(VOLUME2_PATH, chunk_filename)
+                volume = 'volume2'
+            else:
+                enough_space = False
+                break
+
+            with open(save_path, 'wb') as chunk_file:
+                chunk_file.write(chunk)
+
+            metadata['chunks'].append({
+                'part': i,
+                'volume': volume,
+                'filename': chunk_filename
+            })
+
+            # Update available space
+            volume_info[volume]['free'] -= len(chunk)
+
+        if enough_space:
+            # Save metadata
+            with open(os.path.join(VOLUME1_PATH, f"{filename}.meta"), 'w') as meta_file:
+                json.dump(metadata, meta_file)
+
+            results.append({
+                'filename': filename,
+                'success': True,
+                'size': file_size
+            })
+        else:
+            # Cleanup any chunks we've already written
+            for chunk in metadata['chunks']:
+                volume_path = VOLUME1_PATH if chunk['volume'] == 'volume1' else VOLUME2_PATH
+                chunk_path = os.path.join(volume_path, chunk['filename'])
+                if os.path.exists(chunk_path):
+                    os.remove(chunk_path)
+
+            results.append({
+                'filename': filename,
+                'success': False,
+                'error': 'Not enough space available'
+            })
+
+    # If all files failed, return an error
+    if all(not result['success'] for result in results):
+        return jsonify({
+            'success': False,
+            'error': 'Not enough space available for any files',
+            'results': results
+        }), 400
+
+    # Return success with results
+    return jsonify({
+        'success': True,
+        'message': 'Files uploaded successfully',
+        'results': results
+    })
+
+
+@app.route('/upload_single', methods=['POST'])
+def upload_single_file():
+    """Handle uploading a single file with artificial delay for visualization"""
+    # Check if there is a file in the request
+    if 'files' not in request.files:
+        return jsonify({'success': False, 'error': 'No file part'}), 400
+
+    file = request.files['files']
+
     if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
+        return jsonify({'success': False, 'error': 'No selected file'}), 400
 
+    # Add artificial delay to visualize critical section access
+    time.sleep(4)  # 4 second delay for visualization
+
+    # Process the file
     filename = secure_filename(file.filename)
     file_size = len(file.read())
-    file.seek(0)
+    file.seek(0)  # Reset file pointer
 
     volume_info = get_volume_info()
 
@@ -390,6 +493,9 @@ def upload_file():
         'chunks': []
     }
 
+    # Track if we have enough space for this file
+    enough_space = True
+
     for i in range(total_chunks):
         chunk = file.read(CHUNK_SIZE)
         chunk_filename = f"{filename}.part{i}"
@@ -402,7 +508,8 @@ def upload_file():
             save_path = os.path.join(VOLUME2_PATH, chunk_filename)
             volume = 'volume2'
         else:
-            return jsonify({'error': 'Not enough space available'}), 400
+            enough_space = False
+            break
 
         with open(save_path, 'wb') as chunk_file:
             chunk_file.write(chunk)
@@ -416,11 +523,32 @@ def upload_file():
         # Update available space
         volume_info[volume]['free'] -= len(chunk)
 
-    # Save metadata
-    with open(os.path.join(VOLUME1_PATH, f"{filename}.meta"), 'w') as meta_file:
-        json.dump(metadata, meta_file)
+    if enough_space:
+        # Save metadata
+        with open(os.path.join(VOLUME1_PATH, f"{filename}.meta"), 'w') as meta_file:
+            json.dump(metadata, meta_file)
 
-    return jsonify({'success': True, 'message': 'File uploaded successfully'})
+        # Broadcast storage update to all clients
+        socketio.emit('storage_update', get_volume_info())
+
+        return jsonify({
+            'success': True,
+            'message': 'File uploaded successfully',
+            'filename': filename,
+            'size': file_size
+        })
+    else:
+        # Cleanup any chunks we've already written
+        for chunk in metadata['chunks']:
+            volume_path = VOLUME1_PATH if chunk['volume'] == 'volume1' else VOLUME2_PATH
+            chunk_path = os.path.join(volume_path, chunk['filename'])
+            if os.path.exists(chunk_path):
+                os.remove(chunk_path)
+
+        return jsonify({
+            'success': False,
+            'error': 'Not enough space available'
+        }), 400
 
 
 @app.route('/delete/<filename>', methods=['DELETE'])
@@ -437,6 +565,7 @@ def delete_file(filename):
 
         # Delete metadata
         os.remove(os.path.join(VOLUME1_PATH, f"{filename}.meta"))
+
         return jsonify({'success': True})
     except:
         return jsonify({'error': 'File not found'}), 404
@@ -446,12 +575,14 @@ def delete_file(filename):
 def visualize():
     files = get_available_files()
     storage_info = get_volume_info()
+
     # Add file distribution information
     storage_info['file_count'] = len(files)
 
     # Calculate distribution across volumes
     vol1_count = 0
     vol2_count = 0
+
     for file in files:
         meta_path = os.path.join(VOLUME1_PATH, f"{file['filename']}.meta")
         if os.path.exists(meta_path):
@@ -526,6 +657,74 @@ def get_clock_metrics():
     return jsonify(metrics.get_clock_metrics())
 
 
+@app.route('/api/chunk_distribution')
+def get_chunk_distribution():
+    """Get detailed information about how chunks are distributed across volumes"""
+    distribution = {
+        'volume1': {'chunks': [], 'count': 0, 'size': 0},
+        'volume2': {'chunks': [], 'count': 0, 'size': 0}
+    }
+
+    # Get file metadata and analyze chunk distribution
+    files_with_chunks = []
+
+    try:
+        for filename in os.listdir(VOLUME1_PATH):
+            if filename.endswith('.meta'):
+                with open(os.path.join(VOLUME1_PATH, filename), 'r') as meta_file:
+                    metadata = json.load(meta_file)
+                    file_info = {
+                        'filename': metadata['filename'],
+                        'total_size': metadata['total_size'],
+                        'chunks': []
+                    }
+
+                    # Process chunks
+                    for chunk in metadata['chunks']:
+                        volume = chunk['volume']
+                        chunk_filename = chunk['filename']
+                        chunk_path = os.path.join(
+                            VOLUME1_PATH if volume == 'volume1' else VOLUME2_PATH, chunk_filename)
+
+                        if os.path.exists(chunk_path):
+                            chunk_size = os.path.getsize(chunk_path)
+                            distribution[volume]['chunks'].append({
+                                'filename': metadata['filename'],
+                                'chunk_filename': chunk_filename,
+                                'part': chunk['part'],
+                                'size': chunk_size
+                            })
+                            distribution[volume]['count'] += 1
+                            distribution[volume]['size'] += chunk_size
+
+                            # Add to file_info
+                            file_info['chunks'].append({
+                                'part': chunk['part'],
+                                'volume': volume,
+                                'size': chunk_size
+                            })
+
+                    files_with_chunks.append(file_info)
+    except Exception as e:
+        print(f"Error analyzing chunk distribution: {str(e)}")
+
+    return jsonify({
+        'distribution': distribution,
+        'files': files_with_chunks
+    })
+
+
+@app.route('/api/socket_data')
+def get_socket_data():
+    """Get information about current socket connections and nodes"""
+    return jsonify({
+        'active_nodes': list(ra.nodes),
+        'current_cs_node': ra.current_cs_node,
+        'waiting_nodes': ra.waiting_queue,
+        'node_count': len(ra.nodes)
+    })
+
+
 @app.errorhandler(404)
 def page_not_found(e):
     return render_template('error.html', error="Page not found"), 404
@@ -552,6 +751,7 @@ def handle_cs_request(data):
     from_node = data.get('from_node')
     timestamp = data.get('timestamp')
     my_node_id = request.sid
+
     ra.receive_request(from_node, timestamp, my_node_id)
 
 
@@ -560,6 +760,7 @@ def handle_cs_reply(data):
     # Handle reply to critical section request
     from_node = data.get('from_node')
     timestamp = data.get('timestamp')
+
     # Update with the timestamp from the reply
     ra.receive_reply(from_node, timestamp)
 
@@ -575,7 +776,7 @@ def handle_health_sync():
     node_id = request.sid
     timestamp = ra.request_cs(node_id)
     metrics.log_request(node_id, 'health-sync', timestamp)
-    # After receiving all replies, the health update will happen in receive_reply
+    # After receiving all replies, the CS access notification is sent in receive_reply
 
 
 @socketio.on('health_update')

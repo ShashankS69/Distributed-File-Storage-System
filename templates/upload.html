@@ -160,7 +160,12 @@
             border: 1px solid #dee2e6;
             border-radius: 5px;
             background-color: #f8f9fa;
-            display: none;
+        }
+
+        .file-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
         }
 
         .alert {
@@ -179,6 +184,75 @@
             background-color: #f8d7da;
             color: #721c24;
             border: 1px solid #f5c6cb;
+        }
+
+        .file-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .remove-file {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 2px 6px;
+            margin-left: 10px;
+            cursor: pointer;
+        }
+
+        .cs-status {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .cs-log {
+            margin-top: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+
+        .cs-log-entry {
+            margin-bottom: 4px;
+            padding: 4px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .cs-log-entry.enter {
+            color: #28a745;
+        }
+
+        .cs-log-entry.exit {
+            color: #dc3545;
+        }
+
+        .file-progress {
+            margin-top: 5px;
+            padding: 8px;
+            background-color: #e9ecef;
+            border-radius: 3px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .file-progress-name {
+            font-weight: bold;
+        }
+
+        .file-progress-status {
+            font-style: italic;
+        }
+
+        .current-processing {
+            background-color: #d4edda;
         }
     </style>
 </head>
@@ -221,14 +295,15 @@
             <div class="drop-area" id="drop-area">
                 <p>Drag & drop files here or</p>
                 <button class="browse-btn" id="browse-btn">Browse Files</button>
-                <input type="file" id="file-input" class="file-input">
-                <div id="file-details" class="file-details">
-                    <p><strong>Selected file:</strong> <span id="file-name"></span></p>
-                    <p><strong>Size:</strong> <span id="file-size"></span></p>
+                <input type="file" id="file-input" class="file-input" multiple>
+                <div id="file-details" class="file-details" style="display: none;">
+                    <h3>Selected Files (<span id="file-count">0</span>)</h3>
+                    <div id="file-list" class="file-list"></div>
+                    <p><strong>Total Size:</strong> <span id="total-size">0 B</span></p>
                 </div>
             </div>
 
-            <button class="upload-btn" id="upload-btn">Upload File</button>
+            <button class="upload-btn" id="upload-btn">Upload Files</button>
 
             <div class="progress-container" id="progress-container" style="display: none;">
                 <p>Uploading: <span id="progress-text">0%</span></p>
@@ -236,12 +311,26 @@
                     <div class="progress-bar" id="progress-bar"></div>
                 </div>
             </div>
+
+            <div class="cs-status" id="cs-status" style="display: none;">
+                <p>Critical Section Status: <span id="cs-text">Not requested</span></p>
+            </div>
+
+            <div class="cs-log" id="cs-log" style="display: none;">
+                <h3>Critical Section Access Log</h3>
+                <div id="cs-log-entries"></div>
+            </div>
+
+            <div id="file-progress-container" style="display: none;">
+                <h3>File Processing Status</h3>
+                <div id="file-progress-list"></div>
+            </div>
         </div>
     </div>
 
     <script>
         const socket = io();
-        let selectedFile = null;
+        let selectedFiles = [];
 
         function formatBytes(bytes, decimals = 2) {
             if (bytes === 0) return '0 Bytes';
@@ -252,19 +341,24 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
         }
 
-        // Initialize drop area
         const dropArea = document.getElementById('drop-area');
         const fileInput = document.getElementById('file-input');
         const browseBtn = document.getElementById('browse-btn');
         const uploadBtn = document.getElementById('upload-btn');
         const fileDetails = document.getElementById('file-details');
-        const fileName = document.getElementById('file-name');
-        const fileSize = document.getElementById('file-size');
+        const fileList = document.getElementById('file-list');
+        const fileCount = document.getElementById('file-count');
+        const totalSize = document.getElementById('total-size');
         const progressContainer = document.getElementById('progress-container');
         const progressBar = document.getElementById('progress-bar');
         const progressText = document.getElementById('progress-text');
+        const csStatus = document.getElementById('cs-status');
+        const csText = document.getElementById('cs-text');
+        const csLog = document.getElementById('cs-log');
+        const csLogEntries = document.getElementById('cs-log-entries');
+        const fileProgressContainer = document.getElementById('file-progress-container');
+        const fileProgressList = document.getElementById('file-progress-list');
 
-        // Event listeners for drag and drop
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
             dropArea.addEventListener(eventName, preventDefaults, false);
         });
@@ -290,93 +384,203 @@
             dropArea.classList.remove('highlight');
         }
 
-        // Handle dropped files
         dropArea.addEventListener('drop', handleDrop, false);
 
         function handleDrop(e) {
             const dt = e.dataTransfer;
             const files = dt.files;
-
-            if (files.length > 0) {
-                handleFiles(files[0]);
-            }
+            handleFiles(files);
         }
 
-        // Handle file selection through browser
         browseBtn.addEventListener('click', () => {
             fileInput.click();
         });
 
         fileInput.addEventListener('change', function () {
             if (this.files.length > 0) {
-                handleFiles(this.files[0]);
+                handleFiles(this.files);
             }
         });
 
-        function handleFiles(file) {
-            selectedFile = file;
-            fileName.textContent = file.name;
-            fileSize.textContent = formatBytes(file.size);
-            fileDetails.style.display = 'block';
+        function handleFiles(fileList) {
+            for (let i = 0; i < fileList.length; i++) {
+                addFile(fileList[i]);
+            }
+            updateFileDetails();
         }
 
-        // Handle file upload
-        uploadBtn.addEventListener('click', uploadFile);
+        function addFile(file) {
+            if (!fileAlreadyAdded(file)) {
+                selectedFiles.push(file);
+            }
+        }
 
-        function uploadFile() {
-            if (!selectedFile) {
-                showAlert('Please select a file first.', 'danger');
+        function fileAlreadyAdded(file) {
+            return selectedFiles.some(f => f.name === file.name && f.size === file.size);
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updateFileDetails();
+        }
+
+        function updateFileDetails() {
+            if (selectedFiles.length === 0) {
+                fileDetails.style.display = 'none';
                 return;
             }
 
-            const formData = new FormData();
-            formData.append('file', selectedFile);
+            fileDetails.style.display = 'block';
+            fileList.innerHTML = '';
+            fileCount.textContent = selectedFiles.length;
 
-            const xhr = new XMLHttpRequest();
+            let totalBytes = 0;
 
-            // Progress monitoring
-            xhr.upload.addEventListener('progress', (e) => {
-                if (e.lengthComputable) {
-                    const percentComplete = (e.loaded / e.total) * 100;
-                    progressBar.style.width = percentComplete + '%';
-                    progressText.textContent = percentComplete.toFixed(1) + '%';
-                }
+            selectedFiles.forEach((file, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'file-item';
+                fileItem.innerHTML = `
+                    <strong>${file.name}</strong> (${formatBytes(file.size)})
+                    <button class="remove-file" data-index="${index}">×</button>
+                `;
+                fileList.appendChild(fileItem);
+                totalBytes += file.size;
             });
 
-            xhr.addEventListener('loadstart', () => {
-                progressContainer.style.display = 'block';
-                progressBar.style.width = '0%';
-                progressText.textContent = '0%';
-                uploadBtn.disabled = true;
+            totalSize.textContent = formatBytes(totalBytes);
+
+            document.querySelectorAll('.remove-file').forEach(button => {
+                button.addEventListener('click', function () {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    removeFile(index);
+                });
+            });
+        }
+
+        uploadBtn.addEventListener('click', uploadFiles);
+
+        function uploadFiles() {
+            if (selectedFiles.length === 0) {
+                showAlert('Please select at least one file first.', 'danger');
+                return;
+            }
+
+            csStatus.style.display = 'block';
+            csLog.style.display = 'block';
+            fileProgressContainer.style.display = 'block';
+            csText.textContent = 'Requesting critical section...';
+
+            fileProgressList.innerHTML = '';
+            selectedFiles.forEach((file, index) => {
+                const fileProgressItem = document.createElement('div');
+                fileProgressItem.className = 'file-progress';
+                fileProgressItem.id = `file-progress-${index}`;
+                fileProgressItem.innerHTML = `
+                    <span class="file-progress-name">${file.name}</span>
+                    <span class="file-progress-status" id="file-status-${index}">Waiting...</span>
+                `;
+                fileProgressList.appendChild(fileProgressItem);
             });
 
-            xhr.addEventListener('load', () => {
-                if (xhr.status === 200) {
-                    const response = JSON.parse(xhr.responseText);
-                    if (response.success) {
-                        showAlert('File uploaded successfully!', 'success');
-                        // Reset form
-                        selectedFile = null;
-                        fileDetails.style.display = 'none';
-                        fileInput.value = '';
-                    } else {
-                        showAlert('Error: ' + (response.error || 'Unknown error'), 'danger');
+            uploadBtn.disabled = true;
+
+            uploadFilesSequentially(0);
+        }
+
+        function uploadFilesSequentially(index) {
+            if (index >= selectedFiles.length) {
+                uploadBtn.disabled = false;
+                csText.textContent = 'All files processed';
+
+                addLogEntry('Finished processing all files');
+
+                setTimeout(() => {
+                    csStatus.style.display = 'none';
+                }, 3000);
+
+                return;
+            }
+
+            const currentFile = selectedFiles[index];
+
+            const fileProgressItem = document.getElementById(`file-progress-${index}`);
+            fileProgressItem.className = 'file-progress current-processing';
+            document.getElementById(`file-status-${index}`).textContent = 'Requesting critical section...';
+
+            socket.emit('request_health_sync');
+
+            socket.once('cs_access_granted', () => {
+                csText.textContent = `Processing file ${index + 1} of ${selectedFiles.length}: ${currentFile.name}`;
+                addLogEntry(`Entered critical section for file: ${currentFile.name}`, 'enter');
+                document.getElementById(`file-status-${index}`).textContent = 'In critical section, uploading...';
+
+                const formData = new FormData();
+                formData.append('files', currentFile);
+
+                const xhr = new XMLHttpRequest();
+
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percentComplete = (e.loaded / e.total) * 100;
+                        document.getElementById(`file-status-${index}`).textContent =
+                            `Uploading: ${percentComplete.toFixed(1)}%`;
                     }
-                } else {
-                    showAlert('Error: ' + xhr.statusText, 'danger');
-                }
-                progressContainer.style.display = 'none';
-                uploadBtn.disabled = false;
-            });
+                });
 
-            xhr.addEventListener('error', () => {
-                showAlert('Upload failed. Please try again.', 'danger');
-                progressContainer.style.display = 'none';
-                uploadBtn.disabled = false;
-            });
+                xhr.addEventListener('load', () => {
+                    let success = false;
 
-            xhr.open('POST', '/upload', true);
-            xhr.send(formData);
+                    if (xhr.status === 200) {
+                        const response = JSON.parse(xhr.responseText);
+                        if (response.success) {
+                            document.getElementById(`file-status-${index}`).textContent = 'Completed successfully';
+                            fileProgressItem.className = 'file-progress';
+                            success = true;
+                        } else {
+                            document.getElementById(`file-status-${index}`).textContent =
+                                'Failed: ' + (response.error || 'Unknown error');
+                        }
+                    } else {
+                        document.getElementById(`file-status-${index}`).textContent =
+                            'Failed: ' + xhr.statusText;
+                    }
+
+                    setTimeout(() => {
+                        socket.emit('release_cs');
+                        addLogEntry(`Released critical section for file: ${currentFile.name}`, 'exit');
+                        document.getElementById(`file-status-${index}`).textContent += ' (CS released)';
+
+                        setTimeout(() => {
+                            uploadFilesSequentially(index + 1);
+                        }, 1000);
+                    }, 1000);
+                });
+
+                xhr.addEventListener('error', () => {
+                    document.getElementById(`file-status-${index}`).textContent = 'Upload failed';
+
+                    socket.emit('release_cs');
+                    addLogEntry(`Released critical section for file: ${currentFile.name} (after error)`, 'exit');
+
+                    setTimeout(() => {
+                        uploadFilesSequentially(index + 1);
+                    }, 1000);
+                });
+
+                setTimeout(() => {
+                    xhr.open('POST', '/upload_single', true);
+                    xhr.send(formData);
+                }, 2000);
+            });
+        }
+
+        function addLogEntry(message, type = '') {
+            const entry = document.createElement('div');
+            entry.className = `cs-log-entry ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            csLogEntries.appendChild(entry);
+            csLogEntries.scrollTop = csLogEntries.scrollHeight;
         }
 
         function showAlert(message, type) {
@@ -386,8 +590,6 @@
             alertDiv.textContent = message;
             alertContainer.innerHTML = '';
             alertContainer.appendChild(alertDiv);
-
-            // Auto-hide after 5 seconds
             setTimeout(() => {
                 alertDiv.style.opacity = '0';
                 alertDiv.style.transition = 'opacity 1s';
@@ -404,9 +606,13 @@
             document.getElementById('vol2-health').textContent = data.health_status.volume2 ? 'OK' : 'ERROR';
         });
 
-        // Initial data fetch
         socket.on('connect', function () {
             console.log('Socket connected');
+            addLogEntry('Connected to server');
+        });
+
+        socket.on('cs_reply', function (data) {
+            console.log('Received critical section reply:', data);
         });
     </script>
 </body>
