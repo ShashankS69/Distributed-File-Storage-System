@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  file-storage-app:
+    build: .
+    container_name: file-storage-system
+    restart: unless-stopped
+    ports:
+      - "6920:6920"
+    volumes:
+      - original-volume:/app/storage/original
+      - replica-volume:/app/storage/replica
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_DEBUG=0
+
+volumes:
+  original-volume:
+    driver: local
+  replica-volume:
+    driver: local

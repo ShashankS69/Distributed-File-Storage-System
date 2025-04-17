@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Storage System</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .volume-container {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+        }
+
+        .volume {
+            flex: 1;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+
+        .file-item {
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            margin: 5px 0;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logs-container {
+            max-height: 300px;
+            overflow-y: auto;
+            background-color: #343a40;
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+        }
+
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-bottom: 1px solid #495057;
+        }
+
+        .client-badge {
+            background-color: #17a2b8;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            margin-right: 10px;
+        }
+
+        .active-clients {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #e9f5f9;
+            border-radius: 5px;
+        }
+
+        .stat-card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: #6c757d;
+        }
+
+        .progress-container {
+            margin-top: 10px;
+            margin-bottom: 10px;
+        }
+
+        .progress {
+            height: 10px;
+            border-radius: 5px;
+        }
+
+        .queue-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            border-left: 4px solid #17a2b8;
+            font-size: 14px;
+        }
+
+        .queue-client {
+            font-weight: bold;
+            color: #17a2b8;
+        }
+
+        .queue-visualization {
+            display: flex;
+            align-items: center;
+            overflow-x: auto;
+            padding: 10px 0;
+            margin: 10px 0;
+        }
+
+        .queue-box {
+            min-width: 120px;
+            height: 60px;
+            margin-right: 10px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 5px;
+            background-color: #e9ecef;
+            position: relative;
+            padding: 8px;
+            font-size: 12px;
+            text-align: center;
+            word-break: break-word;
+        }
+
+        .queue-box.active {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .queue-arrow {
+            margin: 0 5px;
+            font-size: 20px;
+            color: #6c757d;
+        }
+
+        .volume-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .volume-title {
+            margin: 0;
+            display: flex;
+            align-items: center;
+        }
+
+        .volume-badge {
+            margin-left: 10px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+
+        .volume-badge.original {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .volume-badge.replica {
+            background-color: #6610f2;
+            color: white;
+        }
+
+        .file-icon {
+            margin-right: 8px;
+            font-size: 16px;
+            color: #6c757d;
+        }
+
+        .file-date {
+            font-size: 11px;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+            width: 100%;
+        }
+
+        .ricart-status {
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .ricart-status.locked {
+            background-color: #ffe8e8;
+            border: 1px solid #f5c2c7;
+        }
+
+        .ricart-status.free {
+            background-color: #d1e7dd;
+            border: 1px solid #badbcc;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1 class="mb-4">File Storage System</h1>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        Client Information
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="client-id" class="form-label">Client ID:</label>
+                            <input type="text" class="form-control" id="client-id" placeholder="Enter your client ID">
+                        </div>
+                        <div class="active-clients">
+                            <h6>Active Clients:</h6>
+                            <div id="active-clients-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        Upload File
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="file-input" class="form-label">Select File:</label>
+                            <input class="form-control" type="file" id="file-input">
+                        </div>
+                        <button class="btn btn-primary" onclick="uploadFile()">Upload</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Statistics -->
+        <div class="card mb-4">
+            <div class="card-header">
+                System Statistics
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="total-files">0</div>
+                            <div class="stat-label">Total Files</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="storage-used">0 KB</div>
+                            <div class="stat-label">Storage Used</div>
+                            <div class="progress-container">
+                                <div class="progress">
+                                    <div class="progress-bar" id="storage-progress" role="progressbar" style="width: 0%"
+                                        aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="active-client-count">0</div>
+                            <div class="stat-label">Active Clients</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card">
+                            <div class="stat-value" id="queue-length">0</div>
+                            <div class="stat-label">Queue Length</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <canvas id="activityChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="chart-container">
+                            <canvas id="storageChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ricart-Agrawala Visualization -->
+        <div class="card mb-4">
+            <div class="card-header">
+                Ricart-Agrawala Algorithm Status
+            </div>
+            <div class="card-body">
+                <div id="ricart-status" class="ricart-status free">
+                    Resource is currently FREE
+                </div>
+
+                <h5>Request Queue</h5>
+                <div class="queue-visualization" id="queue-visualization">
+                    <div class="text-muted">No requests in queue</div>
+                </div>
+
+                <div id="queue-list">
+                    <!-- Queue items will be displayed here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                Storage Volumes Visualization
+            </div>
+            <div class="card-body">
+                <div class="volume-container">
+                    <div class="volume">
+                        <div class="volume-header">
+                            <h5 class="volume-title">Original Volume <span class="volume-badge original">PRIMARY</span>
+                            </h5>
+                            <span id="original-count" class="badge bg-secondary">0 files</span>
+                        </div>
+                        <div id="original-files" class="volume-files"></div>
+                    </div>
+                    <div class="volume">
+                        <div class="volume-header">
+                            <h5 class="volume-title">Replica Volume <span class="volume-badge replica">BACKUP</span>
+                            </h5>
+                            <span id="replica-count" class="badge bg-secondary">0 files</span>
+                        </div>
+                        <div id="replica-files" class="volume-files"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                System Logs
+            </div>
+            <div class="card-body">
+                <div class="logs-container" id="logs-container">
+                    <!-- Logs will be displayed here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let clientId = '';
+        let activeClients = new Set();
+        const logs = [];
+        let queueData = [];
+        let ricartLocked = false;
+        let currentHolder = null;
+        let systemStats = {
+            totalFiles: 0,
+            storageUsed: 0,
+            activityData: {
+                uploads: 0,
+                deletions: 0,
+                queuedRequests: 0
+            }
+        };
+
+        // Chart objects
+        let activityChart;
+        let storageChart;
+
+        // Generate a unique client ID
+        function generateClientId() {
+            return 'client_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Initialize when page loads
+        window.onload = function () {
+            // Get existing client ID or generate a new one
+            clientId = localStorage.getItem('clientId') || generateClientId();
+            document.getElementById('client-id').value = clientId;
+            localStorage.setItem('clientId', clientId);
+            registerClient();
+
+            fetchVolumesData();
+            initCharts();
+            fetchSystemStatus();
+
+            // Set up periodic refresh
+            setInterval(fetchSystemStatus, 5000);
+        };
+
+        function initCharts() {
+            // Activity chart (uploads vs deletions)
+            const activityCtx = document.getElementById('activityChart').getContext('2d');
+            activityChart = new Chart(activityCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Uploads', 'Deletions', 'Queued'],
+                    datasets: [{
+                        label: 'System Activity',
+                        data: [0, 0, 0],
+                        backgroundColor: [
+                            'rgba(54, 162, 235, 0.5)',
+                            'rgba(255, 99, 132, 0.5)',
+                            'rgba(255, 206, 86, 0.5)'
+                        ],
+                        borderColor: [
+                            'rgba(54, 162, 235, 1)',
+                            'rgba(255, 99, 132, 1)',
+                            'rgba(255, 206, 86, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+
+            // Storage chart
+            const storageCtx = document.getElementById('storageChart').getContext('2d');
+            storageChart = new Chart(storageCtx, {
+                type: 'pie',
+                data: {
+                    labels: ['Original', 'Replica'],
+                    datasets: [{
+                        label: 'Storage Distribution',
+                        data: [0, 0],
+                        backgroundColor: [
+                            'rgba(40, 167, 69, 0.5)',
+                            'rgba(102, 16, 242, 0.5)'
+                        ],
+                        borderColor: [
+                            'rgba(40, 167, 69, 1)',
+                            'rgba(102, 16, 242, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function updateCharts(stats) {
+            // Update activity chart
+            activityChart.data.datasets[0].data = [
+                stats.activityData.uploads,
+                stats.activityData.deletions,
+                stats.activityData.queuedRequests
+            ];
+            activityChart.update();
+
+            // Update storage chart if we have volume data
+            if (stats.volumeData) {
+                storageChart.data.datasets[0].data = [
+                    stats.volumeData.original || 0,
+                    stats.volumeData.replica || 0
+                ];
+                storageChart.update();
+            }
+        }
+
+        // Listen for client ID changes
+        document.getElementById('client-id').addEventListener('change', function () {
+            clientId = this.value;
+            localStorage.setItem('clientId', clientId);
+            registerClient();
+        });
+
+        function registerClient() {
+            if (clientId) {
+                fetch('/register-client', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ client_id: clientId })
+                });
+            }
+        }
+
+        function fetchSystemStatus() {
+            fetch('/system-status')
+                .then(response => response.json())
+                .then(data => {
+                    updateSystemStats(data);
+                    updateRicartStatus(data.ricart);
+                    updateQueueVisualization(data.queue || []);
+                });
+        }
+
+        function updateSystemStats(data) {
+            systemStats = data;
+
+            // Update stats display
+            document.getElementById('total-files').textContent = data.totalFiles || 0;
+            document.getElementById('storage-used').textContent = formatBytes(data.storageUsed || 0);
+            document.getElementById('active-client-count').textContent = data.activeClients || 0;
+            document.getElementById('queue-length').textContent = data.queueLength || 0;
+
+            // Update progress bar
+            const progressBar = document.getElementById('storage-progress');
+            const percentage = Math.min(100, Math.floor((data.storageUsed / (1024 * 1024 * 10)) * 100)); // Assuming 10MB max
+            progressBar.style.width = `${percentage}%`;
+            progressBar.setAttribute('aria-valuenow', percentage);
+
+            // Update charts
+            updateCharts(data);
+        }
+
+        function updateRicartStatus(ricartData) {
+            if (!ricartData) return;
+
+            const statusElement = document.getElementById('ricart-status');
+            ricartLocked = ricartData.locked || false;
+            currentHolder = ricartData.currentHolder;
+
+            if (ricartLocked) {
+                statusElement.className = 'ricart-status locked';
+                statusElement.innerHTML = `Resource is <strong>LOCKED</strong> by client <strong>${currentHolder || 'Unknown'}</strong>`;
+            } else {
+                statusElement.className = 'ricart-status free';
+                statusElement.innerHTML = 'Resource is currently <strong>FREE</strong>';
+            }
+        }
+
+        function updateQueueVisualization(queue) {
+            const queueViz = document.getElementById('queue-visualization');
+            const queueList = document.getElementById('queue-list');
+
+            queueData = queue;
+
+            // Update visualization
+            if (queue.length === 0) {
+                queueViz.innerHTML = '<div class="text-muted">No requests in queue</div>';
+                queueList.innerHTML = '';
+            } else {
+                queueViz.innerHTML = '';
+                queueList.innerHTML = '<h6 class="mt-3">Queue Details:</h6>';
+
+                // Add processing box if resource is locked
+                if (ricartLocked && currentHolder) {
+                    const processingBox = document.createElement('div');
+                    processingBox.className = 'queue-box active';
+                    processingBox.innerHTML = `<strong>${currentHolder}</strong><br>processing`;
+                    queueViz.appendChild(processingBox);
+
+                    // Add arrow if there are more items
+                    if (queue.length > 0) {
+                        const arrow = document.createElement('div');
+                        arrow.className = 'queue-arrow';
+                        arrow.innerHTML = '→';
+                        queueViz.appendChild(arrow);
+                    }
+                }
+
+                // Add queue items
+                queue.forEach((item, index) => {
+                    // For visualization
+                    const queueBox = document.createElement('div');
+                    queueBox.className = 'queue-box';
+
+                    // Check if item is a tuple or string
+                    let clientId, operation;
+                    if (typeof item === 'string') {
+                        clientId = item;
+                        operation = 'request';
+                    } else if (Array.isArray(item) || typeof item === 'object') {
+                        clientId = item.clientId || item[0] || 'Unknown';
+                        operation = item.operation || (item[2] ? `upload ${item[2]}` : 'operation');
+                    }
+
+                    queueBox.innerHTML = `<strong>${clientId}</strong><br>${operation}`;
+                    queueViz.appendChild(queueBox);
+
+                    // Add arrow except for last item
+                    if (index < queue.length - 1) {
+                        const arrow = document.createElement('div');
+                        arrow.className = 'queue-arrow';
+                        arrow.innerHTML = '→';
+                        queueViz.appendChild(arrow);
+                    }
+
+                    // For detailed list
+                    const queueItem = document.createElement('div');
+                    queueItem.className = 'queue-item';
+                    queueItem.innerHTML = `<span class="queue-client">${clientId}</span>: ${operation}`;
+                    queueList.appendChild(queueItem);
+                });
+            }
+        }
+
+        function fetchVolumesData() {
+            // Fetch original volume files
+            fetch('/volume-files/original')
+                .then(response => response.json())
+                .then(data => {
+                    displayVolumeFiles('original-files', data.files);
+                    document.getElementById('original-count').textContent = `${data.files.length} files`;
+                });
+
+            // Fetch replica volume files
+            fetch('/volume-files/replica')
+                .then(response => response.json())
+                .then(data => {
+                    displayVolumeFiles('replica-files', data.files);
+                    document.getElementById('replica-count').textContent = `${data.files.length} files`;
+                });
+        }
+
+        function displayVolumeFiles(elementId, files) {
+            const volumeElement = document.getElementById(elementId);
+            volumeElement.innerHTML = '';
+
+            if (files.length === 0) {
+                volumeElement.innerHTML = '<div class="text-muted">No files</div>';
+                return;
+            }
+
+            files.forEach(file => {
+                const fileElement = document.createElement('div');
+                fileElement.className = 'file-item';
+
+                const fileInfoContainer = document.createElement('div');
+
+                const fileInfo = document.createElement('div');
+                fileInfo.innerHTML = `<i class="file-icon">📄</i> ${file.name} <span class="badge bg-light text-dark">${formatBytes(file.size)}</span>`;
+
+                const fileDate = document.createElement('div');
+                fileDate.className = 'file-date';
+                fileDate.textContent = `Modified: ${new Date(file.modified * 1000).toLocaleString()}`;
+
+                fileInfoContainer.appendChild(fileInfo);
+                fileInfoContainer.appendChild(fileDate);
+
+                const deleteButton = document.createElement('button');
+                deleteButton.className = 'btn btn-sm btn-outline-danger';
+                deleteButton.textContent = 'Delete';
+                deleteButton.onclick = () => deleteFile(file.name);
+
+                fileElement.appendChild(fileInfoContainer);
+                fileElement.appendChild(deleteButton);
+                volumeElement.appendChild(fileElement);
+            });
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function uploadFile() {
+            const clientId = document.getElementById('client-id').value;
+            const fileInput = document.getElementById('file-input');
+            const file = fileInput.files[0];
+
+            if (!clientId || !file) {
+                alert('Please provide a client ID and select a file.');
+                return;
+            }
+
+            addLog(`Client ${clientId} is requesting to upload file: ${file.name}`);
+
+            const formData = new FormData();
+            formData.append('client_id', clientId);
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    addLog(data.message);
+                    fetchVolumesData();
+                    fetchSystemStatus();
+                });
+        }
+
+        function deleteFile(filename) {
+            const clientId = document.getElementById('client-id').value;
+            if (!clientId) {
+                alert('Please provide a client ID');
+                return;
+            }
+
+            addLog(`Client ${clientId} is requesting to delete file: ${filename}`);
+
+            fetch(`/delete/${filename}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ client_id: clientId })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    addLog(data.message);
+                    fetchVolumesData();
+                    fetchSystemStatus();
+                });
+        }
+
+        function updateActiveClients() {
+            const container = document.getElementById('active-clients-list');
+            container.innerHTML = '';
+
+            activeClients.forEach(id => {
+                const badge = document.createElement('span');
+                badge.className = 'client-badge';
+                badge.textContent = id;
+                container.appendChild(badge);
+            });
+
+            if (activeClients.size === 0) {
+                container.innerHTML = '<span class="text-muted">No active clients</span>';
+            }
+        }
+
+        function addLog(message) {
+            const now = new Date();
+            const timestamp = `${now.toLocaleTimeString()}`;
+            const log = `[${timestamp}] ${message}`;
+            logs.unshift(log);
+
+            // Keep only the last 50 logs
+            if (logs.length > 50) logs.pop();
+
+            const logsContainer = document.getElementById('logs-container');
+            logsContainer.innerHTML = '';
+
+            logs.forEach(logEntry => {
+                const logElement = document.createElement('div');
+                logElement.className = 'log-entry';
+                logElement.textContent = logEntry;
+                logsContainer.appendChild(logElement);
+            });
+        }
+
+        // Socket events
+        socket.on('file_uploaded', data => {
+            addLog(`File uploaded by Client ${data.client_id}: ${data.filename}`);
+            fetchVolumesData();
+            fetchSystemStatus();
+        });
+
+        socket.on('file_deleted', data => {
+            addLog(`File deleted: ${data.filename} by Client ${data.client_id}`);
+            fetchVolumesData();
+            fetchSystemStatus();
+        });
+
+        socket.on('client_registered', data => {
+            activeClients.add(data.client_id);
+            updateActiveClients();
+            addLog(`Client registered: ${data.client_id}`);
+            fetchSystemStatus();
+        });
+
+        socket.on('client_disconnected', data => {
+            activeClients.delete(data.client_id);
+            updateActiveClients();
+            addLog(`Client disconnected: ${data.client_id}`);
+            fetchSystemStatus();
+        });
+
+        socket.on('queue_update', data => {
+            addLog(`Queue update: ${data.message}`);
+            fetchSystemStatus();
+        });
+
+        socket.on('process_next_request', data => {
+            // If this is the client being notified to proceed
+            if (data.client_id === clientId) {
+                addLog(`Your request is now being processed`);
+                // Optionally refresh files to ensure UI is up to date
+                fetchVolumesData();
+            }
+            fetchSystemStatus();
+        });
+
+        socket.on('log_event', data => {
+            addLog(data.message);
+            // Refresh system status if this is a major event
+            if (data.message.includes('Ricart-Agrawala') ||
+                data.message.includes('granted access') ||
+                data.message.includes('released resource')) {
+                fetchSystemStatus();
+            }
+        });
+
+        socket.on('ricart_status_change', data => {
+            updateRicartStatus(data);
+        });
+
+        // Initial fetch
+        fetchVolumesData();
+    </script>
+</body>
+
+</html>
